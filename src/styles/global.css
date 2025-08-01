@@ -1,0 +1,468 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    color: #333;
+    margin: 0;
+    padding: 0;
+}
+
+#app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+    color: white;
+    padding: 0 10px;
+}
+
+.header h1 {
+    font-size: clamp(1.8rem, 5vw, 2.5rem);
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+.header p {
+    font-size: clamp(0.9rem, 3vw, 1.1rem);
+    opacity: 0.9;
+}
+
+.main {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    overflow: hidden;
+    width: 100%;
+}
+
+.input-section {
+    padding: clamp(15px, 3vw, 30px);
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.input-container {
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+#userInput {
+    flex: 1;
+    min-width: 200px;
+    padding: 15px;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    font-size: 16px;
+    resize: vertical;
+    transition: border-color 0.3s ease;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#userInput:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.generate-btn {
+    padding: 15px 30px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    min-width: 120px;
+}
+
+.generate-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.chart-section {
+    padding: clamp(15px, 3vw, 30px);
+}
+
+.chart-container {
+    width: 100%;
+    height: clamp(300px, 60vh, 600px);
+    border-radius: 8px;
+    background: #fafafa;
+    position: relative;
+}
+
+.chart-container.loading::after {
+    content: "加载中...";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.8);
+    font-size: 18px;
+    color: #667eea;
+    z-index: 10;
+}
+
+@media (max-width: 768px) {
+    .input-container {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    
+    .generate-btn {
+        width: 100%;
+    }
+    
+    #app {
+        padding: 10px;
+    }
+    
+    .main {
+        border-radius: 8px;
+    }
+    
+    .chart-container {
+        height: 350px;
+    }
+    
+    .examples {
+        margin-top: 15px;
+    }
+}/* 通知样式 
+*/
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transform: translateX(120%);
+    transition: transform 0.3s ease;
+    z-index: 1000;
+    max-width: 300px;
+}
+
+.notification.show {
+    transform: translateX(0);
+}
+
+.notification.success {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+
+.notification.error {
+    background: linear-gradient(135deg, #dc3545 0%, #f56565 100%);
+}
+
+.notification.info {
+    background: linear-gradient(135deg, #17a2b8 0%, #4cc9f0 100%);
+}
+
+/* 按钮禁用状态 */
+.generate-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* 加载动画 */
+.chart-container.loading::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.chart-container.loading::before {
+    content: "加载中...";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #667eea;
+    font-size: 18px;
+    font-weight: 500;
+    z-index: 11;
+}
+
+/* 输入框焦点状态增强 */
+#userInput:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.25);
+}
+
+/* 输入提示样式 */
+.input-container {
+    position: relative;
+}
+
+.input-hint {
+    position: absolute;
+    bottom: -22px;
+    left: 0;
+    font-size: 12px;
+    color: #6c757d;
+}/*
+ 示例区域样式 */
+.examples {
+    margin-top: 20px;
+    width: 100%;
+}
+
+.example-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+}
+
+.chip {
+    display: inline-block;
+    padding: 6px 12px;
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+    border-radius: 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.chip:hover {
+    background: rgba(102, 126, 234, 0.2);
+    transform: translateY(-2px);
+}
+
+/* 移动端适配增强 */
+@media (max-width: 768px) {
+    .input-section {
+        padding: 20px;
+    }
+    
+    .example-chips {
+        gap: 8px;
+    }
+    
+    .chip {
+        padding: 4px 10px;
+        font-size: 12px;
+    }
+    
+    .notification {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        max-width: none;
+    }
+}/* 图表
+工具栏样式 */
+.chart-toolbar {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+}
+
+.chart-tool-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    color: #495057;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.chart-tool-btn:hover {
+    background: #f8f9fa;
+    border-color: #dee2e6;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.chart-tool-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* 全屏模式 */
+.chart-container.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 9999;
+    background: white;
+    border-radius: 0;
+    padding: 20px;
+}
+
+/* 详细信息提示 */
+.detail-tooltip {
+    position: fixed;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    max-width: 280px;
+    font-size: 13px;
+    pointer-events: none;
+    backdrop-filter: blur(10px);
+    transition: opacity 0.2s ease;
+}
+
+/* 图表容器优化 */
+.chart-container {
+    background: #fafafa;
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.chart-container:hover {
+    border-color: #667eea;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+}
+
+/* 图表加载状态优化 */
+.chart-container.loading {
+    position: relative;
+    overflow: hidden;
+}
+
+.chart-container.loading::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+    animation: loading-shimmer 1.5s infinite;
+    z-index: 5;
+}
+
+@keyframes loading-shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+/* 图表错误状态 */
+.chart-error {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.95);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chart-error button:hover {
+    background: #5a67d8 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 响应式图表优化 */
+@media (max-width: 768px) {
+    .chart-container {
+        height: clamp(250px, 50vh, 350px);
+        margin: 0;
+        border-radius: 8px;
+    }
+    
+    .chart-toolbar {
+        top: 5px;
+        right: 5px;
+        gap: 4px;
+    }
+    
+    .chart-tool-btn {
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+    
+    .detail-tooltip {
+        max-width: 250px;
+        font-size: 12px;
+        padding: 10px;
+    }
+    
+    .chart-error {
+        padding: 10px;
+    }
+}
+
+/* 小屏幕设备优化 */
+@media (max-width: 480px) {
+    .header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .header p {
+        font-size: 0.9rem;
+    }
+    
+    .input-section {
+        padding: 15px 10px;
+    }
+    
+    .chart-section {
+        padding: 15px 10px;
+    }
+    
+    .chart-container {
+        height: 280px;
+    }
+    
+    .chip {
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+}

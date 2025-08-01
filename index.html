@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="K线图绘制工具 - 输入你的想法，生成专业的K线图">
+    <meta name="theme-color" content="#667eea">
+    <title>K线图绘制工具</title>
+    <link rel="stylesheet" href="src/styles/global.css">
+</head>
+
+<body>
+    <div id="app">
+        <header class="header">
+            <h1>K线图绘制工具</h1>
+            <p>输入你的想法，生成专业的K线图</p>
+        </header>
+
+        <main class="main">
+            <div class="input-section">
+                <div class="input-container">
+                    <textarea id="userInput" placeholder="请描述你想要的K线图，例如：显示一个上涨趋势的股票，开盘价100，收盘价120，最高价125，最低价95"
+                        rows="4"></textarea>
+                    <button id="generateBtn" class="generate-btn">生成K线图</button>
+                    <div class="input-hint">提示：可以指定趋势(上涨/下跌/震荡)、价格、天数(如15天/3周/2月)、技术指标(MACD/CCI等)和成交量特征(放量/缩量)</div>
+                </div>
+                <div class="examples">
+                    <div class="example-chips">
+                        <span class="chip" data-example="上涨趋势，30天，开盘价100">上涨趋势</span>
+                        <span class="chip" data-example="下跌趋势，15天，不要成交量">下跌无量</span>
+                        <span class="chip" data-example="震荡行情，20天，价格在90-110之间">震荡行情</span>
+                        <span class="chip" data-example="横盘整理，10天，开盘价100，收盘价102">横盘整理</span>
+                        <span class="chip" data-example="上涨趋势，45天，带MACD指标">MACD指标</span>
+                        <span class="chip" data-example="下跌趋势，25天，带CCI指标，放量">CCI+放量</span>
+                        <span class="chip" data-example="震荡趋势，60天，量价背离">量价背离</span>
+                        <span class="chip" data-example="上涨趋势，15天，缩量上涨">缩量上涨</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <div id="chartContainer" class="chart-container"></div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+
+</html>
