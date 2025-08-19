@@ -1,0 +1,398 @@
+import { PatternRecognizer } from './patternRecognizer.js';
+
+// 生成错误配置的辅助函数
+function getErrorConfig(title, message) {
+    const isDarkTheme = document.documentElement.classList.contains('dark-theme');
+    
+    return {
+        backgroundColor: isDarkTheme ? '#1a1a1a' : '#ffffff',
+        title: {
+            text: title,
+            left: 'center',
+            top: '45%',
+            textStyle: {
+                fontSize: 16,
+                color: isDarkTheme ? '#ff5252' : '#d32f2f',
+                fontWeight: 'bold'
+            }
+        },
+        graphic: [{
+            type: 'group',
+            left: 'center',
+            top: '55%',
+            children: [{
+                type: 'text',
+                style: {
+                    text: message,
+                    font: '14px Microsoft YaHei',
+                    fill: isDarkTheme ? '#888' : '#666'
+                }
+            }]
+        }, {
+            type: 'image',
+            id: 'errorIcon',
+            left: 'center',
+            top: '35%',
+            style: {
+                image: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjUyNTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCI+PC9jaXJjbGU+PGxpbmUgeDE9IjEyIiB5MT0iOCIgeDI9IjEyIiB5Mj0iMTIiPjwvbGluZT48bGluZSB4MT0iMTIiIHkxPSIxNiIgeDI9IjEyLjAxIiB5Mj0iMTYiPjwvbGluZT48L3N2Zz4=',
+                width: 64,
+                height: 64
+            },
+            onclick: function() {
+                // 点击图标时刷新
+                window.location.reload();
+            }
+        }],
+        animation: true,
+        animationDuration: 300,
+        animationEasing: 'cubicOut'
+    };
+}
+
+export function getChartConfig(data) {
+    // 添加数据有效性检查
+    if (!data) {
+        return getErrorConfig('加载失败', '请检查数据源或刷新页面重试');
+    }
+
+    try {
+        const { 
+            dates, 
+            data: klineData, 
+            volumes, 
+            indicators, 
+            technicalIndicators, 
+            title,
+            timeData,          // 分时图数据 [{time, price, volume, avgPrice}]
+            markPoints,        // 标记点数据 [{type, time, price, text, direction}]
+            chartType         // 'candlestick' 或 'time'
+        } = data;
+
+        // 基本数据校验
+        if ((!dates || !klineData) && (!timeData)) {
+            return getErrorConfig('数据错误', '缺少必要的数据');
+        }
+
+        if (chartType === 'time' && (!timeData || timeData.length === 0)) {
+            return getErrorConfig('数据错误', '缺少分时图数据');
+        }
+
+        if (chartType === 'candlestick' && (!dates || !klineData || dates.length === 0 || klineData.length === 0)) {
+            return getErrorConfig('数据错误', '缺少K线图数据');
+        }
+        
+        // 识别特殊形态
+        const patternPositions = PatternRecognizer.findCompletePattern(data);
+    
+        // 检查当前主题
+        const isDarkTheme = document.documentElement.classList.contains('dark-theme');
+
+        // 判断是否为分时图
+        const isTimeChart = chartType === 'time' && timeData;
+
+        const config = {
+            backgroundColor: isDarkTheme ? '#1a1a1a' : '#ffffff',
+            title: {
+                text: title,
+                left: 'center',
+                top: '1%',
+                textStyle: {
+                    fontSize: document.fullscreenElement ? 24 : (window.innerWidth < 768 ? 14 : 16),
+                    fontWeight: 'bold',
+                    color: isDarkTheme ? '#eceff4' : '#333',
+                    textShadow: document.fullscreenElement ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
+                },
+                backgroundColor: isDarkTheme ? 'rgba(26, 26, 26, 0.7)' : 'rgba(255, 255, 255, 0.7)',
+                borderRadius: 4,
+                padding: [8, 30],
+                zlevel: 100
+            },
+            grid: isTimeChart ? [
+                {
+                    top: '18%',
+                    left: '12%',
+                    right: '12%',
+                    height: '50%',
+                    containLabel: true
+                },
+                {
+                    left: '12%',
+                    right: '12%',
+                    top: '75%',
+                    height: '20%',
+                    containLabel: true
+                }
+            ] : {
+                top: '18%',
+                left: '12%',
+                right: '12%',
+                bottom: volumes ? '18%' : '12%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                data: isTimeChart ? timeData.map(item => item.time) : dates,
+                boundaryGap: false,
+                axisLine: {
+                    onZero: false,
+                    lineStyle: {
+                        color: isDarkTheme ? '#4c566a' : '#ccc'
+                    }
+                },
+                splitLine: {
+                    show: false
+                },
+                axisLabel: {
+                    formatter: function(value) {
+                        if (isTimeChart) {
+                            // 分时图时间格式化
+                            const hour = value.split(':')[0];
+                            const minute = value.split(':')[1];
+                            // 只在整点和半点显示完整时间
+                            if (minute === '00' || minute === '30') {
+                                return `${hour}:${minute}`;
+                            } else {
+                                return minute; // 其他时间点只显示分钟
+                            }
+                        } else {
+                            // 日线图日期格式化
+                            const date = new Date(value);
+                            return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }
+                    },
+                    interval: function(index, value) {
+                        if (isTimeChart) {
+                            // 分时图每5分钟显示一个刻度
+                            return index % 5 === 0;
+                        } else {
+                            // 日线图保持原有逻辑
+                            return true;
+                        }
+                    },
+                    margin: 8,
+                    color: isDarkTheme ? '#888' : '#666'
+                },
+                min: 'dataMin',
+                max: 'dataMax'
+            },
+            yAxis: isTimeChart ? [
+                {
+                    scale: true,
+                    position: 'right',
+                    splitLine: {
+                        show: true,
+                        lineStyle: {
+                            color: isDarkTheme ? '#333' : '#f0f0f0',
+                            type: 'dashed'
+                        }
+                    },
+                    axisLabel: {
+                        formatter: (value) => value.toFixed(2),
+                        color: isDarkTheme ? '#888' : '#666'
+                    },
+                    axisLine: {
+                        show: true,
+                        lineStyle: {
+                            color: isDarkTheme ? '#4c566a' : '#ccc'
+                        }
+                    }
+                },
+                {
+                    scale: true,
+                    position: 'right',
+                    gridIndex: 1,
+                    splitNumber: 2,
+                    axisLabel: {
+                        formatter: (value) => {
+                            if (value >= 10000) {
+                                return (value / 10000).toFixed(0) + 'w';
+                            }
+                            return value;
+                        },
+                        color: isDarkTheme ? '#888' : '#666'
+                    },
+                    splitLine: {
+                        show: false
+                    }
+                }
+            ] : {
+                scale: true,
+                splitLine: {
+                    show: true,
+                    lineStyle: {
+                        color: isDarkTheme ? '#333' : '#f0f0f0'
+                    }
+                }
+            },
+            dataZoom: [{
+                type: 'inside',
+                start: 0,
+                end: 100
+            }],
+            series: [],
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'cross'
+                },
+                backgroundColor: isDarkTheme ? 'rgba(33, 33, 33, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                borderColor: isDarkTheme ? '#555' : '#ddd',
+                borderWidth: 1,
+                padding: [10, 15],
+                textStyle: {
+                    color: isDarkTheme ? '#eee' : '#333'
+                },
+                formatter: function(params) {
+                    if (!params || params.length === 0) return '';
+                    
+                    let result = `<div style="margin-bottom:8px;font-weight:bold;">${params[0].axisValue}</div>`;
+                    
+                    if (isTimeChart) {
+                        // 分时图tooltip
+                        const priceItem = params.find(p => p.seriesName === '分时');
+                        const avgPriceItem = params.find(p => p.seriesName === '均价');
+                        const volumeItem = params.find(p => p.seriesName === '分时成交量');
+                        
+                        if (priceItem) {
+                            result += `<div>现价：<span style="color:${isDarkTheme ? '#81c784' : '#4CAF50'};font-weight:bold;">${priceItem.data[1]}</span></div>`;
+                        }
+                        
+                        if (avgPriceItem) {
+                            result += `<div>均价：<span style="color:${isDarkTheme ? '#ffb74d' : '#FFA726'};font-weight:bold;">${avgPriceItem.data[1]}</span></div>`;
+                        }
+                        
+                        if (volumeItem) {
+                            const volume = volumeItem.data.value;
+                            result += `<div>成交量：<span style="font-weight:bold;">${volume >= 10000 ? (volume/10000).toFixed(0) + '万' : volume}</span></div>`;
+                        }
+                    }
+                    
+                    return result;
+                }
+            }
+        };
+        
+        if (isTimeChart) {
+            // 分时图配置
+            config.series.push({
+                name: '分时',
+                type: 'line',
+                data: timeData.map(item => [item.time, item.price]),
+                smooth: true,
+                showSymbol: false,
+                lineStyle: {
+                    color: isDarkTheme ? '#81c784' : '#4CAF50',
+                    width: 2
+                },
+                areaStyle: {
+                    color: {
+                        type: 'linear',
+                        x: 0,
+                        y: 0,
+                        x2: 0,
+                        y2: 1,
+                        colorStops: [{
+                            offset: 0,
+                            color: isDarkTheme ? 'rgba(129,199,132,0.3)' : 'rgba(76,175,80,0.2)'
+                        }, {
+                            offset: 1,
+                            color: isDarkTheme ? 'rgba(129,199,132,0.05)' : 'rgba(76,175,80,0.05)'
+                        }]
+                    }
+                }
+            });
+
+            // 添加均价线
+            config.series.push({
+                name: '均价',
+                type: 'line',
+                data: timeData.map(item => [item.time, item.avgPrice]),
+                smooth: true,
+                showSymbol: false,
+                lineStyle: {
+                    color: isDarkTheme ? '#ffb74d' : '#FFA726',
+                    width: 1.5,
+                    type: 'dashed'
+                }
+            });
+
+            // 添加成交量柱状图
+            if (timeData[0]?.volume) {
+                config.series.push({
+                    name: '分时成交量',
+                    type: 'bar',
+                    xAxisIndex: 1,
+                    yAxisIndex: 1,
+                    data: timeData.map(item => ({
+                        value: item.volume,
+                        itemStyle: {
+                            color: item.price >= item.avgPrice 
+                                ? (isDarkTheme ? 'rgba(129,199,132,0.8)' : 'rgba(76,175,80,0.8)')
+                                : (isDarkTheme ? 'rgba(239,83,80,0.8)' : 'rgba(244,67,54,0.8)'),
+                            borderColor: isDarkTheme ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                            borderWidth: 1
+                        }
+                    })),
+                    barWidth: '60%',
+                    barMaxWidth: 10
+                });
+            }
+
+            // 添加分时图特殊标记
+            if (markPoints && markPoints.length > 0) {
+                config.series.push({
+                    name: '重要标记',
+                    type: 'scatter',
+                    data: markPoints.map(point => ({
+                        value: [point.time, point.price],
+                        symbol: point.direction === 'up' ? 'arrow' : 'arrowDown',
+                        symbolSize: 20,
+                        symbolRotate: point.direction === 'up' ? -45 : 45,
+                        itemStyle: {
+                            color: point.type === 'energyDepletion' ? (isDarkTheme ? '#ef5350' : '#f44336') : 
+                                   point.type === 'volumeIncrease' ? (isDarkTheme ? '#81c784' : '#4caf50') : 
+                                   point.type === 'volumeDecrease' ? (isDarkTheme ? '#ffb74d' : '#ffa726') : 
+                                   '#666',
+                            shadowBlur: 10,
+                            shadowColor: 'rgba(0,0,0,0.3)'
+                        },
+                        label: {
+                            show: true,
+                            formatter: point.text || (
+                                point.type === 'energyDepletion' ? '能量透支' :
+                                point.type === 'volumeIncrease' ? '放量' :
+                                point.type === 'volumeDecrease' ? '减仓' : ''
+                            ),
+                            position: point.direction === 'up' ? 'bottom' : 'top',
+                            distance: 10,
+                            fontSize: 12,
+                            padding: [4, 8],
+                            backgroundColor: isDarkTheme ? 'rgba(33,33,33,0.85)' : 'rgba(255,255,255,0.9)',
+                            borderRadius: 4,
+                            color: isDarkTheme ? '#e0e0e0' : '#333'
+                        }
+                    })),
+                    zlevel: 5
+                });
+            }
+        } else {
+            // K线图配置
+            config.series.push({
+                name: 'K线',
+                type: 'candlestick',
+                data: klineData,
+                itemStyle: {
+                    color: isDarkTheme ? '#bf616a' : '#ec0000',
+                    color0: isDarkTheme ? '#a3be8c' : '#00da3c',
+                    borderColor: isDarkTheme ? '#bf616a' : '#ec0000',
+                    borderColor0: isDarkTheme ? '#a3be8c' : '#00da3c'
+                }
+            });
+        }
+
+        return config;
+    } catch (error) {
+        console.error('Chart configuration error:', error);
+        return getErrorConfig('配置错误', error.message);
+    }
+}

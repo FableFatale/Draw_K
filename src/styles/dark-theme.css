@@ -1,0 +1,192 @@
+/* 黑暗模式样式 */
+:root.dark-theme {
+    --bg-color: #121212;
+    --card-bg: #1e1e1e;
+    --text-color: #e0e0e0;
+    --text-secondary: #aaaaaa;
+    --border-color: #333333;
+    --input-bg: #2a2a2a;
+    --input-border: #444444;
+    --button-gradient: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+    --chart-bg: #1a1a1a;
+    --tooltip-bg: rgba(30, 30, 30, 0.95);
+    --tooltip-border: #444444;
+    --chip-bg: rgba(74, 85, 104, 0.2);
+    --chip-color: #90cdf4;
+    --notification-success: linear-gradient(135deg, #234e52 0%, #2c7a7b 100%);
+    --notification-error: linear-gradient(135deg, #742a2a 0%, #9b2c2c 100%);
+    --notification-info: linear-gradient(135deg, #2a4365 0%, #2b6cb0 100%);
+    --shadow-color: rgba(0, 0, 0, 0.5);
+    --chart-tool-bg: #2a2a2a;
+    --chart-tool-border: #444444;
+    --chart-tool-color: #e0e0e0;
+    --chart-grid-color: #333333;
+    --chart-axis-color: #666666;
+    --chart-text-color: #aaaaaa;
+    --chart-candle-up: #ef5350;
+    --chart-candle-down: #26a69a;
+    --chart-ma5-color: #FF6B35;
+    --chart-ma10-color: #4ECDC4;
+    --chart-ma20-color: #45B7D1;
+    --chart-ma250-color: #9C27B0;
+    --chart-volume-up: #ef5350;
+    --chart-volume-down: #26a69a;
+    --chart-volume-trend: #FFA726;
+}
+
+/* 基础样式覆盖 */
+body.dark-theme {
+    background: #121212;
+    color: var(--text-color);
+}
+
+.dark-theme #app {
+    background: var(--bg-color);
+}
+
+.dark-theme .header {
+    color: var(--text-color);
+}
+
+.dark-theme .main {
+    background: var(--card-bg);
+    box-shadow: 0 10px 30px var(--shadow-color);
+}
+
+.dark-theme .input-section {
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.dark-theme #userInput {
+    background: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-color);
+}
+
+.dark-theme #userInput:focus {
+    border-color: #90cdf4;
+    box-shadow: 0 0 0 3px rgba(144, 205, 244, 0.25);
+}
+
+.dark-theme .generate-btn {
+    background: var(--button-gradient);
+}
+
+.dark-theme .input-hint {
+    color: var(--text-secondary);
+}
+
+.dark-theme .chip {
+    background: var(--chip-bg);
+    color: var(--chip-color);
+}
+
+.dark-theme .chip:hover {
+    background: rgba(144, 205, 244, 0.2);
+}
+
+.dark-theme .chart-container {
+    background: var(--chart-bg);
+    border-color: var(--border-color);
+}
+
+.dark-theme .chart-container:hover {
+    border-color: #90cdf4;
+    box-shadow: 0 2px 8px rgba(144, 205, 244, 0.1);
+}
+
+.dark-theme .chart-container.loading::after {
+    background: rgba(30, 30, 30, 0.8);
+}
+
+.dark-theme .chart-container.loading::before {
+    color: #90cdf4;
+}
+
+.dark-theme .chart-tool-btn {
+    background: var(--chart-tool-bg);
+    border-color: var(--chart-tool-border);
+    color: var(--chart-tool-color);
+}
+
+.dark-theme .chart-tool-btn:hover {
+    background: #3a3a3a;
+    border-color: #555555;
+}
+
+.dark-theme .detail-tooltip {
+    background: var(--tooltip-bg);
+    border-color: var(--tooltip-border);
+    color: var(--text-color);
+}
+
+/* 通知样式覆盖 */
+.dark-theme .notification.success {
+    background: var(--notification-success);
+}
+
+.dark-theme .notification.error {
+    background: var(--notification-error);
+}
+
+.dark-theme .notification.info {
+    background: var(--notification-info);
+}
+
+/* 主题切换按钮 */
+.theme-toggle {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    z-index: 100;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s ease;
+}
+
+.theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.dark-theme .theme-toggle {
+    color: #90cdf4;
+}
+
+.dark-theme .theme-toggle:hover {
+    background: rgba(144, 205, 244, 0.1);
+}
+
+/* 图表错误状态 */
+.dark-theme .chart-error {
+    background: rgba(30, 30, 30, 0.95);
+}
+
+.dark-theme .chart-error button {
+    background: #4a5568 !important;
+    color: white !important;
+}
+
+.dark-theme .chart-error button:hover {
+    background: #2d3748 !important;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .theme-toggle {
+        top: 10px;
+        right: 10px;
+        font-size: 20px;
+        width: 36px;
+        height: 36px;
+    }
+}

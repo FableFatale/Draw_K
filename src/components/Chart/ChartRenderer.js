@@ -7,100 +7,336 @@ export class ChartRenderer {
      * 构造函数
      * @param {string} containerId - 图表容器元素ID
      */
-    constructor(containerId) {
+    constructor(containerId, isDarkTheme = false) {
         this.containerId = containerId;
         this.chartInstance = null;
         this.resizeObserver = null;
+        this.isDarkTheme = isDarkTheme;
+        this.currentData = null;
+        this.renderQueue = [];
+        this.isRendering = false;
+        this.renderTimeout = null;
         this.initChart();
     }
 
     /**
      * 初始化图表
      */
-    initChart() {
+    async initChart() {
         try {
-            // 动态导入ECharts
-            import('echarts').then(echarts => {
-                // 确保容器元素存在
-                const container = document.getElementById(this.containerId);
-                if (!container) {
-                    console.error(`图表容器 #${this.containerId} 不存在`);
-                    return;
-                }
+            const container = document.getElementById(this.containerId);
+            if (!container) {
+                throw new Error(`图表容器 #${this.containerId} 不存在`);
+            }
 
-                // 初始化ECharts实例
-                this.chartInstance = echarts.init(container);
-                
-                // 设置响应式
-                this.setupResizeListener();
-                
-                // 显示加载中状态
-                this.chartInstance.showLoading({
-                    text: '准备中...',
-                    color: '#667eea',
-                    textColor: '#333',
-                    maskColor: 'rgba(255, 255, 255, 0.8)',
-                });
-            }).catch(error => {
-                console.error('加载ECharts库失败:', error);
+            // 设置容器样式
+            container.style.position = 'relative';
+            container.style.width = '100%';
+            container.style.height = '100%';
+            container.style.minHeight = '400px';
+            container.style.backgroundColor = this.isDarkTheme ? '#1a1a1a' : '#ffffff';
+            
+            // 强制设置容器尺寸以确保ECharts能正确计算
+            const containerRect = container.getBoundingClientRect();
+            console.log('Container dimensions:', {
+                width: containerRect.width,
+                height: containerRect.height,
+                offsetWidth: container.offsetWidth,
+                offsetHeight: container.offsetHeight
             });
+
+            const echarts = await import('echarts');
+            
+            // 确保容器有明确的尺寸
+            if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+                console.warn('Container has zero dimensions, setting explicit size');
+                container.style.width = '100%';
+                container.style.height = '500px';
+            }
+            
+            // 使用构造函数传入的主题状态
+            this.chartInstance = echarts.init(container, this.isDarkTheme ? 'dark' : null, {
+                renderer: 'canvas',
+                devicePixelRatio: window.devicePixelRatio || 1,
+                useCoarsePointer: true,
+                useDirtyRect: true,
+                progressive: 200,
+                progressiveThreshold: 1000,
+                width: 'auto',
+                height: 'auto'
+            });
+            
+            console.log('ECharts instance created:', this.chartInstance);
+            
+            // 添加图表事件处理
+            this.setupEventHandlers();
+            
+            // 设置响应式
+            this.setupResizeListener();
+            
+            // 显示加载中状态
+            this.showLoading('准备中...');
+            
+            // 启动渲染循环
+            this.startRenderLoop();
+
         } catch (error) {
             console.error('初始化图表时出错:', error);
+            this.showError('初始化图表失败，请刷新重试');
         }
+    }
+
+    setupEventHandlers() {
+        if (!this.chartInstance) return;
+
+        // 错误处理
+        this.chartInstance.on('rendererror', (params) => {
+            console.error('图表渲染错误:', params);
+            this.showError('图表渲染出错，请刷新重试');
+        });
+
+        // 性能监控
+        this.chartInstance.on('finished', () => {
+            console.debug('图表渲染完成');
+            if (this.renderStartTime) {
+                const renderTime = performance.now() - this.renderStartTime;
+                console.debug(`渲染耗时: ${renderTime.toFixed(2)}ms`);
+            }
+        });
+
+        // 图表点击事件
+        this.chartInstance.on('click', params => {
+            if (params.componentType === 'series') {
+                this.handleChartClick(params);
+            }
+        });
+
+        // 缩放完成事件
+        this.chartInstance.on('datazoom', this.handleDataZoom.bind(this));
+
+        // 图表状态变化事件
+        this.chartInstance.on('statechange', this.handleStateChange.bind(this));
     }
 
     /**
      * 设置窗口大小变化监听
      */
     setupResizeListener() {
-        // 使用ResizeObserver监听容器大小变化
         const container = document.getElementById(this.containerId);
-        if (container && this.chartInstance) {
-            this.resizeObserver = new ResizeObserver(() => {
-                // 防抖处理，避免频繁调用resize
-                if (this.resizeTimer) {
-                    clearTimeout(this.resizeTimer);
-                }
-                this.resizeTimer = setTimeout(() => {
-                    if (this.chartInstance) {
-                        this.chartInstance.resize({
-                            width: 'auto',
-                            height: 'auto'
-                        });
-                    }
-                }, 100);
-            });
-            this.resizeObserver.observe(container);
+        if (!container || !this.chartInstance) return;
 
-            // 同时监听窗口大小变化
-            this.windowResizeHandler = () => {
-                if (this.resizeTimer) {
-                    clearTimeout(this.resizeTimer);
+        // 防抖函数
+        const debounce = (fn, delay) => {
+            let timer = null;
+            return function(...args) {
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        };
+
+        // 响应式调整函数
+        const handleResize = () => {
+            if (!this.chartInstance) return;
+
+            const containerRect = container.getBoundingClientRect();
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            
+            // 根据屏幕大小计算合适的图表尺寸
+            const isMobile = windowWidth < 768;
+            const isTablet = windowWidth >= 768 && windowWidth < 1200;
+            const isLandscape = window.matchMedia("(orientation: landscape)").matches;
+            
+            let chartHeight;
+            if (isLandscape && windowWidth < 1024) {
+                chartHeight = Math.min(350, windowHeight * 0.8);
+            } else if (isMobile) {
+                chartHeight = Math.min(400, windowHeight * 0.6);
+            } else if (isTablet) {
+                chartHeight = Math.min(500, windowHeight * 0.65);
+            } else {
+                chartHeight = Math.min(600, windowHeight * 0.7);
+            }
+
+            // 只调整图表大小，不修改配置以避免无限循环
+
+            // 调整图表大小
+            this.chartInstance.resize({
+                width: containerRect.width,
+                height: chartHeight,
+                animation: {
+                    duration: 200,
+                    easing: 'cubicOut'
                 }
-                this.resizeTimer = setTimeout(() => {
+            });
+        };
+
+        // 清除旧的观察器
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+        }
+
+        // 创建新的ResizeObserver
+        this.resizeObserver = new ResizeObserver(debounce(handleResize, 200));
+        this.resizeObserver.observe(container);
+
+        // 监听窗口大小变化
+        this.windowResizeHandler = debounce(handleResize, 200);
+        window.addEventListener('resize', this.windowResizeHandler);
+
+        // 监听设备方向变化（对移动设备很重要）
+        this.orientationChangeHandler = () => {
+            if (this.chartInstance) {
+                setTimeout(() => {
+                    this.chartInstance.resize({
+                        width: 'auto',
+                        height: 'auto'
+                    });
+                }, 300);
+            }
+        };
+        window.addEventListener('orientationchange', this.orientationChangeHandler);
+
+        // 监听全屏状态变化
+        this.fullscreenChangeHandler = () => {
+            if (document.fullscreenElement) {
+                // 进入全屏状态
+                container.classList.add('fullscreen');
+                setTimeout(() => {
                     if (this.chartInstance) {
                         this.chartInstance.resize({
-                            width: 'auto',
-                            height: 'auto'
+                            width: window.innerWidth,
+                            height: window.innerHeight
                         });
                     }
-                }, 100);
-            };
-            window.addEventListener('resize', this.windowResizeHandler);
-            
-            // 监听设备方向变化（对移动设备很重要）
-            this.orientationChangeHandler = () => {
-                if (this.chartInstance) {
-                    setTimeout(() => {
-                        this.chartInstance.resize({
-                            width: 'auto',
-                            height: 'auto'
-                        });
-                    }, 300);
-                }
-            };
-            window.addEventListener('orientationchange', this.orientationChangeHandler);
+                }, 300);
+            } else {
+                // 退出全屏状态
+                container.classList.remove('fullscreen');
+                setTimeout(() => {
+                    if (this.chartInstance) {
+                        this.chartInstance.resize();
+                    }
+                }, 300);
+            }
+        };
+        document.addEventListener('fullscreenchange', this.fullscreenChangeHandler);
+        document.addEventListener('webkitfullscreenchange', this.fullscreenChangeHandler);
+        document.addEventListener('mozfullscreenchange', this.fullscreenChangeHandler);
+        document.addEventListener('MSFullscreenChange', this.fullscreenChangeHandler);
+    }
+
+    /**
+     * 验证图表数据
+     * @param {Object} data - 图表数据
+     * @returns {boolean} - 数据是否有效
+     */
+    validateChartData(data) {
+        if (!data) {
+            console.error('图表数据为空');
+            this.showError('图表数据为空');
+            return false;
         }
+
+        // 检查图表类型并验证相应的数据结构
+        if (data.chartType === 'time') {
+            // 分时图验证
+            if (!data.timeData || !Array.isArray(data.timeData) || data.timeData.length === 0) {
+                console.error('分时图数据格式错误或为空:', data.timeData);
+                this.showError('分时图数据格式错误');
+                return false;
+            }
+            
+            // 验证分时图数据结构
+            const invalidTimeData = data.timeData.some(item => 
+                !item || typeof item.time !== 'string' || typeof item.price !== 'number'
+            );
+            
+            if (invalidTimeData) {
+                console.error('分时图数据点格式错误');
+                this.showError('分时图数据点格式错误');
+                return false;
+            }
+        } else {
+            // K线图验证
+            if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+                console.error('K线图数据格式错误或为空:', data.data);
+                this.showError('K线图数据格式错误');
+                return false;
+            }
+            
+            // 验证K线数据结构
+            const invalidKLineData = data.data.some(item => 
+                !Array.isArray(item) || item.length < 4 || 
+                item.some(val => typeof val !== 'number' || isNaN(val))
+            );
+            
+            if (invalidKLineData) {
+                console.error('K线数据点格式错误');
+                this.showError('K线数据点格式错误');
+                return false;
+            }
+        }
+
+        // 验证日期数据（如果存在）
+        if (data.dates && (!Array.isArray(data.dates) || data.dates.length === 0)) {
+            console.error('日期数据格式错误');
+            this.showError('日期数据格式错误');
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 显示加载状态
+     * @param {string} message - 加载信息
+     */
+    showLoading(message = '加载中...') {
+        if (this.chartInstance) {
+            this.chartInstance.showLoading('default', {
+                text: message,
+                color: '#4f46e5',
+                textColor: '#374151',
+                maskColor: 'rgba(255, 255, 255, 0.8)',
+                zlevel: 0
+            });
+        }
+    }
+
+    /**
+     * 启动渲染循环
+     */
+    startRenderLoop() {
+        // 渲染循环已在 processRenderQueue 中实现
+        console.debug('渲染循环已启动');
+    }
+
+    /**
+     * 处理图表点击事件
+     * @param {Object} params - 点击事件参数
+     */
+    handleChartClick(params) {
+        console.debug('图表点击事件:', params);
+        // 可以在这里添加点击处理逻辑
+    }
+
+    /**
+     * 处理数据缩放事件
+     * @param {Object} params - 缩放事件参数
+     */
+    handleDataZoom(params) {
+        console.debug('数据缩放事件:', params);
+        // 可以在这里添加缩放处理逻辑
+    }
+
+    /**
+     * 处理状态变化事件
+     * @param {Object} params - 状态变化参数
+     */
+    handleStateChange(params) {
+        console.debug('状态变化事件:', params);
+        // 可以在这里添加状态变化处理逻辑
     }
 
     /**
@@ -108,70 +344,92 @@ export class ChartRenderer {
      * @param {Object} data - 图表数据
      */
     renderChart(data) {
-        if (!this.chartInstance) {
-            console.error('图表实例未初始化');
-            this.showError('图表实例未初始化，请刷新页面重试');
+        // 数据验证
+        if (!this.validateChartData(data)) {
             return;
         }
 
-        // 数据验证
-        if (!data || !data.dates || !data.data || data.dates.length === 0 || data.data.length === 0) {
-            console.error('图表数据无效:', data);
-            this.showError('图表数据无效，请检查输入');
+        // 将数据添加到渲染队列
+        this.renderQueue.push(data);
+
+        // 如果当前没有在渲染，开始处理队列
+        if (!this.isRendering) {
+            this.processRenderQueue();
+        }
+    }
+
+    async processRenderQueue() {
+        if (this.isRendering || this.renderQueue.length === 0) {
             return;
         }
 
         try {
+            this.isRendering = true;
+            const data = this.renderQueue[0]; // 获取队列中的第一个数据
+
+            // 记录开始时间
+            this.renderStartTime = performance.now();
+
             // 显示加载状态
-            this.chartInstance.showLoading({
-                text: '渲染中...',
-                color: '#667eea',
-                textColor: '#333',
-                maskColor: 'rgba(255, 255, 255, 0.8)',
-                zlevel: 0
-            });
+            this.showLoading('渲染中...');
 
             // 导入图表配置生成函数
-            import('../../utils/chartConfig.js').then(module => {
-                const { getChartConfig } = module;
+            const { getChartConfig } = await import('../../utils/chartConfig.simple.js');
+            
+            try {
+                console.debug('Generating chart config...');
+                const option = getChartConfig(data);
                 
-                try {
-                    // 生成图表配置
-                    const option = getChartConfig(data);
-                    
-                    // 隐藏加载状态
-                    this.chartInstance.hideLoading();
-                    
-                    // 设置图表配置
-                    this.chartInstance.setOption(option, true);
-                    
-                    // 添加图表交互事件
-                    this.setupChartEvents(data);
-                    
-                    // 保存当前数据，用于重置功能
-                    this.currentData = data;
-                    
-                    // 触发渲染完成事件
-                    this.onRenderComplete(data);
-                    
-                } catch (configError) {
-                    console.error('生成图表配置时出错:', configError);
-                    this.chartInstance.hideLoading();
-                    this.showError('图表配置生成失败，请重试');
+                console.log('Generated chart option keys:', Object.keys(option || {}));
+                
+                if (!option || typeof option !== 'object') {
+                    throw new Error('Invalid chart configuration generated');
                 }
-            }).catch(error => {
-                console.error('加载图表配置模块失败:', error);
-                if (this.chartInstance) {
-                    this.chartInstance.hideLoading();
-                }
-                this.showError('图表模块加载失败，请刷新页面重试');
-            });
+                
+                // 隐藏加载状态
+                this.chartInstance.hideLoading();
+                
+                // 清除当前的所有配置
+                this.chartInstance.clear();
+                
+                // 设置图表配置
+                console.log('Setting chart option...');
+                this.chartInstance.setOption(option, true);
+                
+                // 强制重新渲染
+                setTimeout(() => {
+                    if (this.chartInstance) {
+                        console.log('Forcing chart resize...');
+                        this.chartInstance.resize();
+                    }
+                }, 100);
+                
+                // 记录当前数据
+                this.currentData = data;
+
+                // 添加图表交互事件
+                this.setupChartEvents(data);
+                
+                // 触发渲染完成事件
+                this.onRenderComplete(data);
+                
+            } catch (configError) {
+                console.error('生成图表配置时出错:', configError);
+                this.showError(`生成图表配置失败: ${configError.message}`);
+            }
         } catch (error) {
             console.error('渲染图表时出错:', error);
-            if (this.chartInstance) {
-                this.chartInstance.hideLoading();
+            this.showError(`渲染图表失败: ${error.message}`);
+        } finally {
+            // 移除已处理的数据
+            this.renderQueue.shift();
+            this.isRendering = false;
+
+            // 如果队列中还有数据，继续处理
+            if (this.renderQueue.length > 0) {
+                // 使用requestAnimationFrame来优化性能
+                requestAnimationFrame(() => this.processRenderQueue());
             }
-            this.showError('图表渲染失败，请重试');
         }
     }
     
@@ -189,6 +447,9 @@ export class ChartRenderer {
             existingError.remove();
         }
         
+        // 检查当前主题
+        const isDarkTheme = document.documentElement.classList.contains('dark-theme');
+        
         // 创建错误提示元素
         const errorDiv = document.createElement('div');
         errorDiv.className = 'chart-error';
@@ -199,7 +460,7 @@ export class ChartRenderer {
                 align-items: center;
                 justify-content: center;
                 height: 100%;
-                color: #666;
+                color: ${isDarkTheme ? '#aaa' : '#666'};
                 font-size: 14px;
                 text-align: center;
                 padding: 20px;
@@ -207,7 +468,7 @@ export class ChartRenderer {
                 <div style="
                     width: 48px;
                     height: 48px;
-                    background: #f5f5f5;
+                    background: ${isDarkTheme ? '#333' : '#f5f5f5'};
                     border-radius: 50%;
                     display: flex;
                     align-items: center;
@@ -218,7 +479,7 @@ export class ChartRenderer {
                 <div style="margin-bottom: 8px; font-weight: 500;">${message}</div>
                 <button onclick="location.reload()" style="
                     padding: 8px 16px;
-                    background: #667eea;
+                    background: ${isDarkTheme ? '#4a5568' : '#667eea'};
                     color: white;
                     border: none;
                     border-radius: 4px;
@@ -316,6 +577,9 @@ export class ChartRenderer {
             existingTooltip.remove();
         }
         
+        // 检查当前主题
+        const isDarkTheme = document.documentElement.classList.contains('dark-theme');
+        
         // 创建详细信息提示元素
         const tooltip = document.createElement('div');
         tooltip.className = 'detail-tooltip';
@@ -329,32 +593,34 @@ export class ChartRenderer {
         const low = dataPoint[2];
         const high = dataPoint[3];
         const changePercent = ((close - open) / open * 100).toFixed(2);
-        const changeColor = close >= open ? '#ec0000' : '#00da3c';
+        const changeColor = close >= open 
+            ? (isDarkTheme ? '#ef5350' : '#ec0000') 
+            : (isDarkTheme ? '#26a69a' : '#00da3c');
         
         // 构建HTML内容
         tooltip.innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 5px;">${date}</div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <div style="font-weight: bold; margin-bottom: 5px; color: ${isDarkTheme ? '#e0e0e0' : 'inherit'};">${date}</div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: ${isDarkTheme ? '#aaa' : 'inherit'};">
                 <span>开盘:</span>
                 <span>${formatPrice(open)}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: ${isDarkTheme ? '#aaa' : 'inherit'};">
                 <span>收盘:</span>
                 <span style="color: ${changeColor}">${formatPrice(close)}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: ${isDarkTheme ? '#aaa' : 'inherit'};">
                 <span>最高:</span>
                 <span>${formatPrice(high)}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: ${isDarkTheme ? '#aaa' : 'inherit'};">
                 <span>最低:</span>
                 <span>${formatPrice(low)}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: ${isDarkTheme ? '#aaa' : 'inherit'};">
                 <span>振幅:</span>
                 <span>${((high - low) / open * 100).toFixed(2)}%</span>
             </div>
-            <div style="display: flex; justify-content: space-between; border-top: 1px solid #eee; padding-top: 3px; margin-top: 3px;">
+            <div style="display: flex; justify-content: space-between; border-top: 1px solid ${isDarkTheme ? '#444' : '#eee'}; padding-top: 3px; margin-top: 3px; color: ${isDarkTheme ? '#aaa' : 'inherit'};">
                 <span>涨跌幅:</span>
                 <span style="color: ${changeColor}; font-weight: bold;">${changePercent}%</span>
             </div>
@@ -421,7 +687,7 @@ export class ChartRenderer {
             }
             
             // 重新渲染图表
-            import('../../utils/chartConfig.js').then(module => {
+            import('../../utils/chartConfig.simple.js').then(module => {
                 const { getChartConfig } = module;
                 const option = getChartConfig(this.currentData);
                 
@@ -459,9 +725,37 @@ export class ChartRenderer {
             
             // 全屏后调整图表大小
             container.classList.add('fullscreen');
+            
+            // 添加全屏样式
+            const fullscreenStyle = document.createElement('style');
+            fullscreenStyle.id = 'fullscreen-style';
+            fullscreenStyle.textContent = `
+                .chart-container.fullscreen {
+                    position: fixed !important;
+                    top: 0 !important;
+                    left: 0 !important;
+                    width: 100vw !important;
+                    height: 100vh !important;
+                    z-index: 9999 !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background-color: white !important;
+                }
+                .dark-theme .chart-container.fullscreen {
+                    background-color: #1a1a1a !important;
+                }
+            `;
+            document.head.appendChild(fullscreenStyle);
+            
+            // 延迟调整图表大小，确保全屏转换完成
             setTimeout(() => {
-                this.chartInstance.resize();
-            }, 100);
+                if (this.chartInstance) {
+                    this.chartInstance.resize({
+                        width: window.innerWidth,
+                        height: window.innerHeight
+                    });
+                }
+            }, 300);
         } else {
             // 退出全屏
             if (document.exitFullscreen) {
@@ -474,9 +768,19 @@ export class ChartRenderer {
             
             // 退出全屏后调整图表大小
             container.classList.remove('fullscreen');
+            
+            // 移除全屏样式
+            const fullscreenStyle = document.getElementById('fullscreen-style');
+            if (fullscreenStyle) {
+                fullscreenStyle.remove();
+            }
+            
+            // 延迟调整图表大小，确保全屏转换完成
             setTimeout(() => {
-                this.chartInstance.resize();
-            }, 100);
+                if (this.chartInstance) {
+                    this.chartInstance.resize();
+                }
+            }, 300);
         }
     }
 
@@ -484,8 +788,12 @@ export class ChartRenderer {
      * 更新图表数据
      * @param {Object} newData - 新的图表数据
      */
-    updateChart(newData) {
-        if (!this.chartInstance) {
+    updateChart(newData, forceRefresh = false) {
+        if (!this.chartInstance || forceRefresh) {
+            // 如果图表实例不存在或需要强制刷新，先销毁再重新创建
+            if (this.chartInstance) {
+                this.chartInstance.dispose();
+            }
             this.initChart();
             setTimeout(() => {
                 this.renderChart(newData);
@@ -493,6 +801,62 @@ export class ChartRenderer {
             return;
         }
         this.renderChart(newData);
+    }
+
+    /**
+     * 更新图表主题
+     * @param {boolean} isDarkTheme - 是否为暗色主题
+     */
+    updateTheme(isDarkTheme) {
+        if (!this.chartInstance) return;
+        
+        try {
+            // 更新存储的主题状态
+            this.isDarkTheme = isDarkTheme;
+            
+            // 保存当前配置
+            const currentOption = this.chartInstance.getOption();
+            
+            // 销毁当前实例
+            this.chartInstance.dispose();
+            
+            // 重新创建实例，应用新主题
+            import('echarts').then(echarts => {
+                const container = document.getElementById(this.containerId);
+                if (!container) return;
+                
+                // 使用更新后的主题状态初始化
+                this.chartInstance = echarts.init(container, this.isDarkTheme ? 'dark' : null);
+                
+                // 更新主题相关的配置
+                if (currentOption) {
+                    // 调整文本颜色
+                    if (currentOption.title && currentOption.title[0]) {
+                        currentOption.title[0].textStyle = currentOption.title[0].textStyle || {};
+                        currentOption.title[0].textStyle.color = isDarkTheme ? '#e0e0e0' : '#333';
+                    }
+                    
+                    // 调整提示框样式
+                    if (currentOption.tooltip) {
+                        currentOption.tooltip.backgroundColor = isDarkTheme ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+                        currentOption.tooltip.borderColor = isDarkTheme ? '#444444' : '#ccc';
+                        currentOption.tooltip.textStyle = currentOption.tooltip.textStyle || {};
+                        currentOption.tooltip.textStyle.color = isDarkTheme ? '#e0e0e0' : '#333';
+                    }
+                    
+                    // 应用更新后的配置
+                    this.chartInstance.setOption(currentOption);
+                }
+                
+                // 重新设置响应式
+                this.setupResizeListener();
+                
+            }).catch(error => {
+                console.error('更新图表主题时出错:', error);
+            });
+        } catch (error) {
+            console.error('更新图表主题时出错:', error);
+        }
     }
 
     /**
@@ -532,16 +896,32 @@ export class ChartRenderer {
             this.orientationChangeHandler = null;
         }
         
+        // 移除全屏变化事件监听器
+        if (this.fullscreenChangeHandler) {
+            document.removeEventListener('fullscreenchange', this.fullscreenChangeHandler);
+            document.removeEventListener('webkitfullscreenchange', this.fullscreenChangeHandler);
+            document.removeEventListener('mozfullscreenchange', this.fullscreenChangeHandler);
+            document.removeEventListener('MSFullscreenChange', this.fullscreenChangeHandler);
+            this.fullscreenChangeHandler = null;
+        }
+        
+        // 移除全屏样式
+        const fullscreenStyle = document.getElementById('fullscreen-style');
+        if (fullscreenStyle) {
+            fullscreenStyle.remove();
+        }
+        
         // 清理工具栏
         const toolbar = document.querySelector(`#${this.containerId}-toolbar`);
         if (toolbar) {
             toolbar.remove();
         }
         
-        // 清理详细信息提示框
-        const tooltip = document.querySelector('.detail-tooltip');
-        if (tooltip) {
-            tooltip.remove();
-        }
+        // 清理其他资源
+        this.currentData = null;
+        this.renderQueue = [];
+        this.isRendering = false;
+        
+        console.debug('图表实例已销毁');
     }
 }

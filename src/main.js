@@ -18,6 +18,10 @@ class KLineApp {
         this.userInput = null;
         this.generateBtn = null;
         this.chartContainer = null;
+        this.themeToggle = null;
+        
+        // 主题状态
+        this.isDarkTheme = false;
         
         // 初始化应用
         this.init();
@@ -33,6 +37,7 @@ class KLineApp {
             this.userInput = document.getElementById('userInput');
             this.generateBtn = document.getElementById('generateBtn');
             this.chartContainer = document.getElementById('chartContainer');
+            this.themeToggle = document.getElementById('themeToggle');
             
             // 确保所有必要的DOM元素都存在
             if (!this.userInput || !this.generateBtn || !this.chartContainer) {
@@ -40,8 +45,11 @@ class KLineApp {
                 return;
             }
             
-            // 初始化图表渲染器
-            this.chartRenderer = new ChartRenderer('chartContainer');
+            // 先初始化主题，确保主题状态准备好
+            this.initTheme();
+            
+            // 初始化图表渲染器，传入当前主题状态
+            this.chartRenderer = new ChartRenderer('chartContainer', this.isDarkTheme);
             
             // 绑定事件
             this.bindEvents();
@@ -79,6 +87,13 @@ class KLineApp {
                 }
             });
         });
+        
+        // 主题切换按钮点击事件
+        if (this.themeToggle) {
+            this.themeToggle.addEventListener('click', () => {
+                this.toggleTheme();
+            });
+        }
     }
 
     /**
@@ -86,6 +101,8 @@ class KLineApp {
      */
     handleGenerate() {
         const userInputText = this.userInput.value.trim();
+        
+        console.log('用户输入:', userInputText);
         
         // 检查输入是否为空
         if (!userInputText) {
@@ -117,6 +134,8 @@ class KLineApp {
             setTimeout(() => {
                 let chartData;
                 
+                console.log('开始处理用户输入...');
+                
                 // 检查是否是特定形态请求
                 const isBreakoutPattern = userInputText.includes('阳线 + 阴线 + 大阳线') || 
                                          userInputText.includes('突破形态') ||
@@ -124,12 +143,16 @@ class KLineApp {
                                          userInputText.includes('5日线在250日线上方');
                 
                 if (isBreakoutPattern) {
+                    console.log('生成突破形态...');
                     // 生成特定的突破形态
                     chartData = this.generateBreakoutPattern();
                 } else {
+                    console.log('使用数据处理器处理输入...');
                     // 正常处理用户输入
                     chartData = this.dataProcessor.processUserInput(userInputText);
                 }
+                
+                console.log('处理后的图表数据:', chartData);
                 
                 // 渲染图表
                 this.chartRenderer.renderChart(chartData);
@@ -217,9 +240,16 @@ class KLineApp {
         // 生成示例数据
         const sampleData = this.dataProcessor.generateSampleData();
         
+        console.log('生成的示例数据:', sampleData);
+        
         // 渲染欢迎图表
         setTimeout(() => {
-            this.chartRenderer.renderChart(sampleData);
+            console.log('开始渲染欢迎图表...');
+            if (this.chartRenderer) {
+                this.chartRenderer.renderChart(sampleData);
+            } else {
+                console.error('ChartRenderer 未初始化');
+            }
         }, 500);
     }
     
@@ -310,6 +340,82 @@ class KLineApp {
         };
     }
     
+    /**
+     * 初始化主题
+     */
+    initTheme() {
+        // 检查本地存储中的主题设置
+        const savedTheme = localStorage.getItem('theme');
+        
+        // 检查系统偏好
+        const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        // 如果有保存的主题设置，使用它；否则，使用系统偏好
+        this.isDarkTheme = savedTheme === 'dark' || (savedTheme === null && prefersDarkScheme);
+        
+        // 应用主题
+        this.applyTheme();
+        
+        // 监听系统主题变化
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            if (localStorage.getItem('theme') === null) {
+                this.isDarkTheme = e.matches;
+                this.applyTheme();
+            }
+        });
+    }
+    
+    /**
+     * 应用主题
+     */
+    applyTheme() {
+        if (this.isDarkTheme) {
+            document.documentElement.classList.add('dark-theme');
+            document.body.classList.add('dark-theme');
+            this.themeToggle.textContent = '☀️';
+            this.themeToggle.title = '切换到亮色模式';
+        } else {
+            document.documentElement.classList.remove('dark-theme');
+            document.body.classList.remove('dark-theme');
+            this.themeToggle.textContent = '🌙';
+            this.themeToggle.title = '切换到暗色模式';
+        }
+        
+        // 如果图表已经初始化，重新渲染以应用新主题
+        if (this.chartRenderer && this.chartRenderer.chartInstance) {
+            this.chartRenderer.updateTheme(this.isDarkTheme);
+        }
+    }
+    
+    /**
+     * 切换主题
+     */
+    toggleTheme() {
+        this.isDarkTheme = !this.isDarkTheme;
+        
+        // 保存主题设置到本地存储
+        localStorage.setItem('theme', this.isDarkTheme ? 'dark' : 'light');
+        
+        // 应用主题
+        this.applyTheme();
+
+        // 重新处理当前数据
+        if (this.userInput.value.trim()) {
+            const chartData = this.dataProcessor.processUserInput(
+                this.userInput.value.trim(), 
+                true // 强制刷新
+            );
+            this.chartRenderer.updateChart(chartData, true);
+        } else {
+            // 如果没有用户输入，刷新示例数据
+            const sampleData = this.dataProcessor.generateSampleData();
+            this.chartRenderer.updateChart(sampleData, true);
+        }
+        
+        // 显示通知
+        this.showNotification(this.isDarkTheme ? '已切换到暗色模式' : '已切换到亮色模式', 'info');
+    }
+
     /**
      * 计算移动平均线
      * @param {Array} data - 数据数组

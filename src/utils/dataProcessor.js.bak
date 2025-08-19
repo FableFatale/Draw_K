@@ -1,0 +1,1529 @@
+// StockTermsData被TermMatcher类间接使用
+import { TermMatcher, StockTerms } from './stockTerms.js';
+import { TimeChartProcessor } from './timeChartProcessor.js';
+
+export class DataProcessor {
+    constructor() {
+        this.patterns = {
+            price: /(\d+(?:\.\d+)?)/g,
+            trend: /(上涨|下跌|震荡|横盘|涨|跌|牛市|熊市)/,
+            period: /(\d+)\s*(?:天|日|个交易日|交易日)/,
+            volume: /成交量|交易量|量/,
+            openPrice: /开盘价?\s*[:：]?\s*(\d+(?:\.\d+)?)/,
+            closePrice: /收盘价?\s*[:：]?\s*(\d+(?:\.\d+)?)/,
+            highPrice: /最高价?\s*[:：]?\s*(\d+(?:\.\d+)?)/,
+            lowPrice: /最低价?\s*[:：]?\s*(\d+(?:\.\d+)?)/,
+            // 移除未使用的正则表达式
+            // 添加技术指标识别
+            technicalIndicators: /(MACD|CCI|KDJ|RSI|BOLL|布林带)/gi
+        };
+    }
+
+    processUserInput(input, forceRefresh = false) {
+        try {
+            // 检查是否是分时图请求
+            const isTimeChart = /分时图|分时|日内走势|(\d{1,2}[:：.]?\d{2}.*(?:拉升|上涨|回落|下跌|震荡|横盘|盘整|冲高|探底|缓量|放量))|^\d{1,2}[:：.]?\d{2}\s*[-~至到]\s*\d{1,2}[:：.]?\d{2}/i.test(input);
+            
+            if (isTimeChart) {
+                console.log('Processing time series request:', input);
+                
+                const result = {
+                    chartType: 'time',
+                    title: '分时走势',
+                    timeTrends: [],
+                    timeData: []
+                };
+                
+                // 处理特殊模式（如"分时增量上涨"）
+                if (input.includes('分时增量上涨')) {
+                    timeTrends = [
+                        { startTime: '09:30', endTime: '10:00', trend: '缓慢上涨' },
+                        { startTime: '10:00', endTime: '10:30', trend: '加速上涨' },
+                        { startTime: '10:30', endTime: '11:00', trend: '快速上涨' },
+                        { startTime: '11:00', endTime: '11:30', trend: '强势上涨' },
+                        { startTime: '13:30', endTime: '14:00', trend: '加速上涨' },
+                        { startTime: '14:00', endTime: '14:30', trend: '快速上涨' },
+                        { startTime: '14:30', endTime: '15:00', trend: '强势上涨' }
+                    ];
+                } else {
+                    // 处理常规时间段描述
+                    const segments = input.split(/[,，]/);
+                    for (const segment of segments) {
+                        // 增强的时间格式匹配
+                        const timeMatch = segment.match(/(\d{1,2})[:：.]?(\d{2})\s*[-~至到]\s*(\d{1,2})[:：.]?(\d{2})\s*(拉升|上涨|回落|下跌|震荡|横盘|盘整|冲高|探底|增量|强势|震荡|盘整|反弹)/);
+                        if (timeMatch) {
+                            const startHour = timeMatch[1].padStart(2, '0');
+                            const startMin = timeMatch[2];
+                            const endHour = timeMatch[3].padStart(2, '0');
+                            const endMin = timeMatch[4];
+                            const trend = this.normalizeTrend(timeMatch[5]);
+                            
+                            const startTime = `${startHour}:${startMin}`;
+                            const endTime = `${endHour}:${endMin}`;
+                            
+                            if (this.isValidTimeRange(startTime, endTime)) {
+                                timeTrends.push({ startTime, endTime, trend });
+                            }
+                        }
+                    }
+                }
+                
+                // 解析输入获取时间范围和趋势
+                const timeRangeMatch = input.match(/(\d{1,2}[:：.]?\d{2})\s*[-~至到]\s*(\d{1,2}[:：.]?\d{2})\s*(.*)/);
+                if (timeRangeMatch) {
+                    let startTime = this.normalizeTimeFormat(timeRangeMatch[1]);
+                    let endTime = this.normalizeTimeFormat(timeRangeMatch[2]);
+                    const trendDesc = timeRangeMatch[3];
+
+                    // 调整交易时间范围
+                    if (this.convertToMinutes(startTime) < this.convertToMinutes('09:30')) {
+                        startTime = '09:30';
+                    }
+                    if (this.convertToMinutes(endTime) > this.convertToMinutes('15:00')) {
+                        endTime = '15:00';
+                    }
+
+                    // 解析趋势类型
+                    let trend = '平稳';
+                    if (trendDesc.includes('缓量上涨')) {
+                        trend = 'slowRise';
+                    } else if (trendDesc.includes('放量上涨')) {
+                        trend = 'volumeRise';
+                    } else if (trendDesc.includes('上涨')) {
+                        trend = 'rise';
+                    }
+
+                    console.log('Generating time series data:', { startTime, endTime, trend });
+                    
+                    // 生成分时数据
+                    const timeData = [];
+                    let currentPrice = 100; // 起始价格
+                    const startMinutes = this.convertToMinutes(startTime);
+                    const endMinutes = this.convertToMinutes(endTime);
+                    const duration = endMinutes - startMinutes;
+                        
+                        if (duration > 0) {
+                            for (let i = 0; i <= duration; i++) {
+                                const time = this.minutesToTime(startMinutes + i);
+                                const progress = i / duration;
+                                const priceChange = this.calculatePriceChange(trendType, progress);
+                                currentPrice *= (1 + priceChange);
+                                
+                                timeData.push({
+                                    time,
+                                    price: parseFloat(currentPrice.toFixed(2)),
+                                    volume: this.generateVolume(currentPrice, trendType, progress)
+                                });
+                            }
+                        }
+                    }
+                    
+                    // 计算均价
+                    for (let i = 0; i < timeData.length; i++) {
+                        const slice = timeData.slice(0, i + 1);
+                        const avgPrice = slice.reduce((sum, item) => sum + item.price, 0) / slice.length;
+                        timeData[i].avgPrice = parseFloat(avgPrice.toFixed(2));
+                    }
+                    
+                    return {
+                        chartType: 'time',
+                        timeData: timeData,
+                        title: '分时走势'
+                    };
+                }
+            }
+
+            // 如果不是分时图趋势描述，按照常规K线处理
+            const terms = StockTerms.extractTerms(input);
+            
+            // 验证术语组合的合理性
+            const validationResult = this.validateTermCombination(terms);
+            if (!validationResult.isValid) {
+                console.warn('术语组合不合理:', validationResult.conflicts);
+                // 显示警告但继续处理
+            }
+
+            // 分析用户输入
+            const analysis = this.analyzeInput(input);
+            
+            // 添加识别到的术语信息
+            analysis.recognizedTerms = terms;
+            analysis.termValidation = validationResult;
+
+            // 添加强制刷新标记
+            analysis.forceRefresh = forceRefresh;
+
+            return this.generateChartData(analysis);
+        } catch (error) {
+            console.error('处理用户输入时出错:', error);
+            return this.generateSampleData();
+        }
+    }
+
+    createPatternGenerator(patterns) {
+        return {
+            generatePattern: (basePrice, dayIndex, totalDays) => {
+                for (const pattern of patterns) {
+                    switch (pattern) {
+                        case 'doubleBottom':
+                            return this.generateDoubleBottomPattern(basePrice, dayIndex, totalDays);
+                        case 'doubleTop':
+                            return this.generateDoubleTopPattern(basePrice, dayIndex, totalDays);
+                        case 'headAndShoulders':
+                            return this.generateHeadAndShouldersPattern(basePrice, dayIndex, totalDays);
+                        // 添加更多形态生成逻辑
+                    }
+                }
+                return null;
+            }
+        };
+    }
+
+    generateDoubleBottomPattern(basePrice, dayIndex, totalDays) {
+        const progress = dayIndex / totalDays;
+        const firstBottomIndex = Math.floor(totalDays * 0.3);
+        const secondBottomIndex = Math.floor(totalDays * 0.7);
+        
+        if (dayIndex === firstBottomIndex || dayIndex === secondBottomIndex) {
+            return {
+                override: true,
+                ohlc: [
+                    basePrice * 0.98, // open
+                    basePrice * 0.95, // close
+                    basePrice * 0.92, // low
+                    basePrice * 0.99  // high
+                ]
+            };
+        }
+        
+        return null;
+    }
+
+    generateDoubleTopPattern(basePrice, dayIndex, totalDays) {
+        const progress = dayIndex / totalDays;
+        const firstTopIndex = Math.floor(totalDays * 0.3);
+        const secondTopIndex = Math.floor(totalDays * 0.7);
+        
+        if (dayIndex === firstTopIndex || dayIndex === secondTopIndex) {
+            return {
+                override: true,
+                ohlc: [
+                    basePrice * 1.02, // open
+                    basePrice * 1.05, // close
+                    basePrice * 1.01, // low
+                    basePrice * 1.08  // high
+                ]
+            };
+        }
+        
+        return null;
+    }
+
+    generateHeadAndShouldersPattern(basePrice, dayIndex, totalDays) {
+        const leftShoulderIndex = Math.floor(totalDays * 0.25);
+        const headIndex = Math.floor(totalDays * 0.5);
+        const rightShoulderIndex = Math.floor(totalDays * 0.75);
+        
+        if (dayIndex === leftShoulderIndex || dayIndex === rightShoulderIndex) {
+            return {
+                override: true,
+                ohlc: [
+                    basePrice * 1.02, // open
+                    basePrice * 1.04, // close
+                    basePrice * 1.01, // low
+                    basePrice * 1.05  // high
+                ]
+            };
+        } else if (dayIndex === headIndex) {
+            return {
+                override: true,
+                ohlc: [
+                    basePrice * 1.04, // open
+                    basePrice * 1.07, // close
+                    basePrice * 1.03, // low
+                    basePrice * 1.08  // high
+                ]
+            };
+        }
+        
+        return null;
+    }
+
+    validateTermCombination(terms) {
+        const result = {
+            isValid: true,
+            conflicts: [],
+            suggestions: []
+        };
+
+        // 检查互斥术语
+        const patternTerms = terms.filter(term => term.type === 'pattern');
+        const volumeTerms = terms.filter(term => term.type === 'volumePattern');
+
+        // 检查形态冲突
+        if (patternTerms.length > 1) {
+            const conflictingPatterns = patternTerms.map(t => t.term);
+            result.conflicts.push({
+                type: 'pattern_conflict',
+                message: `检测到多个可能冲突的形态: ${conflictingPatterns.join(', ')}`,
+                terms: conflictingPatterns
+            });
+            result.isValid = false;
+        }
+
+        // 检查成交量模式冲突
+        if (volumeTerms.length > 1) {
+            const conflictingVolumes = volumeTerms.map(t => t.term);
+            result.conflicts.push({
+                type: 'volume_conflict',
+                message: `检测到多个可能冲突的成交量模式: ${conflictingVolumes.join(', ')}`,
+                terms: conflictingVolumes
+            });
+            result.isValid = false;
+        }
+
+        // 添加建议
+        if (patternTerms.length > 0 && volumeTerms.length === 0) {
+            result.suggestions.push({
+                type: 'volume_suggestion',
+                message: '建议添加成交量描述以更好地展示形态特征'
+            });
+        }
+
+        return result;
+    }
+
+    analyzeInput(input) {
+        // 使用新的术语匹配器
+        const trend = TermMatcher.matchTrend(input);
+        const period = TermMatcher.matchTimeframe(input);
+        const priceInfo = TermMatcher.matchPrices(input);
+        const volumeInfo = TermMatcher.matchVolume(input);
+        const technicalIndicators = TermMatcher.matchTechnicalIndicators(input);
+        const movingAverages = TermMatcher.matchMovingAverages(input);
+
+        // 使用新的金融术语映射功能
+        const financialTerms = StockTerms.extractTerms(input);
+
+        // 解析量上涨模式参数
+        const volumePatternParams = this.parseVolumePatternParams(input);
+
+        // 兼容旧的价格提取逻辑
+        const prices = input.match(this.patterns.price);
+        const openMatch = input.match(this.patterns.openPrice);
+        const closeMatch = input.match(this.patterns.closePrice);
+        const highMatch = input.match(this.patterns.highPrice);
+        const lowMatch = input.match(this.patterns.lowPrice);
+
+        // 使用新的术语匹配结果，如果没有匹配到则使用默认值
+        const normalizedTrend = trend || '震荡';
+        const finalVolumeTrend = volumeInfo.volumeTrend || 'normal';
+        const finalVolumePriceRelation = volumeInfo.volumePriceRelation || 'normal';
+        
+        // 确保使用用户输入的周期，或者使用默认值
+        let periodValue = null;
+        // 首先尝试使用TermMatcher解析的周期
+        if (period !== null && period > 0) {
+            periodValue = period;
+        } else {
+            // 如果没有通过TermMatcher解析到，尝试直接从input中提取数字
+            const numMatch = input.match(/(\d+)\s*(?:天|日|个交易日|交易日|k线|K线|根|条)/);
+            if (numMatch) {
+                const num = parseInt(numMatch[1]);
+                if (!isNaN(num) && num > 0) {
+                    periodValue = num;
+                }
+            }
+        }
+        // 如果还是没有找到有效的周期，使用默认值30天
+        if (!periodValue) {
+            periodValue = 30;
+        }
+
+        return {
+            prices: prices ? prices.map(p => parseFloat(p)) : [],
+            trend: normalizedTrend,
+            period: periodValue, // 使用解析到的周期值
+            hasVolume: !input.includes('不要成交量') &&
+                !input.includes('无成交量') &&
+                !input.includes('不显示成交量'),
+            volumeTrend: finalVolumeTrend,
+            volumePriceRelation: finalVolumePriceRelation,
+            specificPrices: {
+                open: priceInfo.open || (openMatch ? parseFloat(openMatch[1]) : null),
+                close: priceInfo.close || (closeMatch ? parseFloat(closeMatch[1]) : null),
+                high: priceInfo.high || (highMatch ? parseFloat(highMatch[1]) : null),
+                low: priceInfo.low || (lowMatch ? parseFloat(lowMatch[1]) : null)
+            },
+            // 添加技术指标信息
+            technicalIndicators: technicalIndicators,
+            movingAverages: movingAverages,
+            // 添加金融术语和量上涨模式信息
+            financialTerms: financialTerms,
+            volumePatterns: volumePatternParams
+        };
+    }
+
+    generateChartData(analysis) {
+        const { 
+            prices, 
+            trend, 
+            period, 
+            hasVolume, 
+            specificPrices, 
+            volumeTrend, 
+            volumePriceRelation, 
+            technicalIndicators, 
+            volumePatterns, 
+            financialTerms,
+            recognizedTerms = [],
+            termValidation = { isValid: true, conflicts: [], suggestions: [] }
+        } = analysis;
+
+        // 根据识别到的术语调整图表生成参数
+        const chartParams = this.adjustChartParamsBasedOnTerms(recognizedTerms);
+
+        // 基础价格设定
+        let basePrice = 100;
+        if (specificPrices && specificPrices.open !== null) {
+            basePrice = specificPrices.open;
+        } else if (prices.length > 0) {
+            basePrice = prices[0];
+        }
+
+        // 目标价格设定（如果有）
+        let targetPrice = null;
+        if (specificPrices && specificPrices.close !== null) {
+            targetPrice = specificPrices.close;
+        }
+
+        // 创建分析上下文，包含所有需要在生成过程中共享的信息
+        const analysisContext = {
+            ...analysis,
+            targetPrice,
+            prevDayClose: basePrice,
+            chartParams
+        };
+
+        // 如果有特殊形态需求，使用形态生成器
+        const patternGenerator = chartParams.patterns.length > 0 ? 
+            this.createPatternGenerator(chartParams.patterns) : null;
+
+        const data = [];
+        const volumes = [];
+        const dates = [];
+
+        // 生成日期数组 - 确保生成指定数量的交易日
+        const endDate = new Date();
+        let currentDate = new Date();
+        // 设置起始日期，确保有足够的日期可以生成指定数量的交易日（考虑周末）
+        currentDate.setDate(currentDate.getDate() - period * 1.5);
+
+        // 收集足够的交易日
+        while (dates.length < period && currentDate <= endDate) {
+            const dayOfWeek = currentDate.getDay();
+            // 跳过周末
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                dates.push(currentDate.toISOString().split('T')[0]);
+            }
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        // 如果收集的日期不足，继续向未来添加日期
+        while (dates.length < period) {
+            const lastDate = new Date(dates[dates.length - 1] || endDate.toISOString().split('T')[0]);
+            lastDate.setDate(lastDate.getDate() + 1);
+            if (lastDate.getDay() !== 0 && lastDate.getDay() !== 6) {
+                dates.push(lastDate.toISOString().split('T')[0]);
+            } else {
+                lastDate.setDate(lastDate.getDate() + 1);
+                if (lastDate.getDay() !== 0 && lastDate.getDay() !== 6) {
+                    dates.push(lastDate.toISOString().split('T')[0]);
+                }
+            }
+        }
+
+        // 确保只保留指定数量的日期
+        if (dates.length > period) {
+            dates.splice(0, dates.length - period);
+        }
+
+        for (let i = 0; i < period; i++) {
+            const dayData = this.generateDayData(basePrice, trend, i, period, analysisContext);
+            data.push(dayData.ohlc);
+
+            if (hasVolume) {
+                volumes.push(dayData.volume);
+            }
+
+            // 更新基准价格和上下文
+            basePrice = dayData.ohlc[1];
+            analysisContext.prevDayClose = basePrice;
+
+            // 保存当前价格变化，用于后续成交量生成
+            analysisContext.priceChanges = analysisContext.priceChanges || [];
+            analysisContext.priceChanges.push((dayData.ohlc[1] - dayData.ohlc[0]) / dayData.ohlc[0]);
+        }
+
+        // 计算技术指标
+        const indicators = {};
+
+        // 计算均线指标
+        const closePrices = data.map(d => d[1]); // 收盘价
+        indicators.MA5 = this.calculateMA(closePrices, 5);
+        indicators.MA10 = this.calculateMA(closePrices, 10);
+        indicators.MA20 = this.calculateMA(closePrices, 20);
+
+        // 添加MA250长期均线
+        indicators.MA250 = this.calculateMA(closePrices, Math.min(250, closePrices.length));
+
+        // 根据用户需求添加技术指标
+        if (technicalIndicators && technicalIndicators.length > 0) {
+            // 添加MACD指标
+            if (technicalIndicators.includes('MACD')) {
+                indicators.MACD = this.calculateMACD(closePrices);
+            }
+
+            // 添加CCI指标
+            if (technicalIndicators.includes('CCI')) {
+                indicators.CCI = this.calculateCCI(data);
+            }
+
+            // 添加KDJ指标
+            if (technicalIndicators.includes('KDJ')) {
+                indicators.KDJ = this.calculateKDJ(data);
+            }
+
+            // 添加RSI指标
+            if (technicalIndicators.includes('RSI')) {
+                indicators.RSI = this.calculateRSI(closePrices);
+            }
+
+            // 添加布林带指标
+            if (technicalIndicators.includes('BOLL')) {
+                indicators.BOLL = this.calculateBOLL(closePrices);
+            }
+        }
+
+        // 识别量上涨模式
+        let recognizedVolumePatterns = null;
+        if (volumePatterns && hasVolume) {
+            recognizedVolumePatterns = this.recognizeVolumePatterns(volumes, volumePatterns, data);
+        }
+
+        // 返回完整的图表数据
+        return {
+            dates,
+            data,
+            volumes: hasVolume ? volumes : null,
+            indicators,
+            title: this.generateTitle(analysis),
+            technicalIndicators: technicalIndicators || [],
+            volumePatterns: recognizedVolumePatterns,
+            financialTerms: financialTerms || []
+        };
+    }
+
+    generateDayData(basePrice, trend, dayIndex, totalDays, analysis = null) {
+        // 根据天数调整波动率，使波动与天数联动
+        const progress = dayIndex / totalDays;
+        const volatility = 0.02 + (progress * 0.01); // 波动率随天数增加而增加
+
+        let trendFactor = this.getTrendFactor(trend, dayIndex, totalDays);
+
+        // 计算目标价格（如果有）
+        let targetPrice = null;
+        if (analysis && analysis.specificPrices && analysis.specificPrices.close && dayIndex === totalDays - 1) {
+            targetPrice = analysis.specificPrices.close;
+        }
+
+        // 如果有目标价格，调整价格走势以达到目标
+        if (targetPrice !== null && dayIndex === totalDays - 1) {
+            // 最后一天直接使用目标价格
+            const finalTrend = (targetPrice - basePrice) / basePrice;
+            const adjustedTrendFactor = finalTrend / totalDays * (dayIndex + 1);
+            trendFactor = adjustedTrendFactor;
+        }
+
+        let open = basePrice * (1 + (Math.random() - 0.5) * volatility);
+
+        if (dayIndex === 0 && analysis && analysis.specificPrices && analysis.specificPrices.open) {
+            open = analysis.specificPrices.open;
+        }
+
+        let close = open * (1 + trendFactor + (Math.random() - 0.5) * volatility);
+
+        if (dayIndex === totalDays - 1 && analysis && analysis.specificPrices && analysis.specificPrices.close) {
+            close = analysis.specificPrices.close;
+        }
+
+        // 根据天数和趋势调整高低点
+        let highVolatility = volatility * (1 + progress * 0.5); // 高点波动率随天数增加
+        let lowVolatility = volatility * (1 - progress * 0.2); // 低点波动率随天数减少
+
+        let high = Math.max(open, close) * (1 + Math.random() * highVolatility);
+        let low = Math.min(open, close) * (1 - Math.random() * lowVolatility);
+
+        if (analysis && analysis.specificPrices) {
+            if (analysis.specificPrices.high && analysis.specificPrices.high >= Math.max(open, close)) {
+                high = analysis.specificPrices.high;
+            }
+            if (analysis.specificPrices.low && analysis.specificPrices.low <= Math.min(open, close)) {
+                low = analysis.specificPrices.low;
+            }
+        }
+
+        const volume = this.generateVolume(open, close, trend, dayIndex, totalDays, analysis);
+
+        return {
+            ohlc: [open, close, low, high],
+            volume
+        };
+    }
+
+    getTrendFactor(trend, dayIndex, totalDays) {
+        const progress = dayIndex / totalDays;
+
+        // 添加随机性和周期性，使走势更自然
+        const randomNoise = (Math.random() - 0.5) * 0.003;
+        const cyclicalFactor = Math.sin(progress * Math.PI * 2) * 0.002;
+
+        switch (trend) {
+            case '上涨':
+                // 上涨趋势：开始缓慢，中间加速，最后趋于平缓
+                const upCurve = 0.003 + Math.pow(progress, 1.5) * 0.015;
+                return upCurve + randomNoise + cyclicalFactor;
+
+            case '下跌':
+                // 下跌趋势：开始急跌，然后减缓
+                const downCurve = -0.003 - Math.pow(progress, 0.8) * 0.015;
+                return downCurve + randomNoise - cyclicalFactor;
+
+            case '震荡':
+                // 震荡趋势：多重正弦波叠加，与天数紧密联动
+                const primaryWave = Math.sin(progress * Math.PI * 4) * 0.006;
+                const secondaryWave = Math.sin(progress * Math.PI * 8) * 0.003;
+                return primaryWave + secondaryWave + randomNoise;
+
+            case '横盘':
+                // 横盘趋势：小幅随机波动，保持在一定范围内
+                const baseNoise = (Math.random() - 0.5) * 0.002;
+                const boundedNoise = Math.min(Math.max(baseNoise, -0.003), 0.003);
+                return boundedNoise + Math.sin(progress * Math.PI * 6) * 0.001;
+
+            default:
+                return randomNoise;
+        }
+    }
+
+    generateVolume(open, close, trend, dayIndex, totalDays, analysis = null) {
+        const baseVolume = 600000;
+        const priceChangePercent = Math.abs((close - open) / open);
+        const progress = dayIndex / totalDays;
+
+        // 增强价格变化对成交量的影响
+        const priceImpact = 1 + priceChangePercent * 3;
+
+        let volumeTrendImpact = 1;
+        if (analysis && analysis.volumeTrend) {
+            switch (analysis.volumeTrend) {
+                case 'shrinking':
+                    // 更强的缩量效果，与天数更紧密联动
+                    volumeTrendImpact = 1.5 - progress * 1.2;
+                    break;
+                case 'expanding':
+                    // 更强的放量效果，与天数更紧密联动
+                    volumeTrendImpact = 0.5 + progress * 1.5;
+                    break;
+                default:
+                    // 默认情况下，成交量与K线走势联动
+                    volumeTrendImpact = 0.8 + Math.sin(progress * Math.PI * 2) * 0.3;
+            }
+        } else {
+            // 根据K线走势调整成交量
+            switch (trend) {
+                case '上涨':
+                    // 上涨趋势：成交量逐渐增加
+                    volumeTrendImpact = 0.7 + progress * 0.8;
+                    break;
+                case '下跌':
+                    // 下跌趋势：成交量先增加后减少
+                    if (progress < 0.5) {
+                        volumeTrendImpact = 0.8 + progress * 0.8;
+                    } else {
+                        volumeTrendImpact = 1.2 - (progress - 0.5) * 0.8;
+                    }
+                    break;
+                case '震荡':
+                    // 震荡趋势：成交量波动与价格波动同步
+                    volumeTrendImpact = 0.8 + Math.sin(progress * Math.PI * 4) * 0.4;
+                    break;
+                case '横盘':
+                    // 横盘趋势：成交量逐渐萎缩
+                    volumeTrendImpact = 0.9 - progress * 0.4;
+                    break;
+                default:
+                    volumeTrendImpact = 1;
+            }
+        }
+
+        let volumePriceAdjust = 1;
+        if (analysis && analysis.volumePriceRelation) {
+            switch (analysis.volumePriceRelation) {
+                case 'divergent':
+                    if (priceChangePercent > 0.01) {
+                        volumePriceAdjust = 0.5;
+                    } else {
+                        volumePriceAdjust = 1.5;
+                    }
+                    break;
+                case 'consistent':
+                    volumePriceAdjust = 1 + priceChangePercent * 3;
+                    break;
+                default:
+                    volumePriceAdjust = 1;
+            }
+        }
+
+        const randomFactor = 0.95 + Math.random() * 0.1;
+
+        const volume = Math.floor(baseVolume * priceImpact * volumeTrendImpact * volumePriceAdjust * randomFactor);
+
+        return Math.max(200000, Math.min(5000000, volume));
+    }
+
+    /**
+     * 识别量上涨模式
+     * @param {Array} volumes - 成交量数据数组
+     * @param {Object} params - 识别参数
+     * @param {Array} klineData - K线数据数组
+     * @returns {Array} - 返回识别到的模式位置数组
+     */
+    recognizeVolumePatterns(volumes, params, klineData) {
+        if (!volumes || !params || volumes.length === 0) {
+            return null;
+        }
+
+        const patterns = [];
+        const days = params.days || 5;
+        const minGrowthRate = params.minGrowthRate || 0.05;
+        const strict = params.strict !== undefined ? params.strict : true;
+
+        // 遍历成交量数据，寻找连续上涨模式
+        for (let i = 0; i <= volumes.length - days; i++) {
+            let isPattern = true;
+            const growthRates = [];
+
+            // 检查连续上涨
+            for (let j = i; j < i + days - 1; j++) {
+                const growthRate = (volumes[j + 1] - volumes[j]) / volumes[j];
+                growthRates.push(growthRate);
+
+                if (strict && growthRate <= 0) {
+                    isPattern = false;
+                    break;
+                }
+            }
+
+            // 计算总体增长率
+            const totalGrowthRate = (volumes[i + days - 1] - volumes[i]) / volumes[i];
+
+            // 检查是否满足最小增长率要求
+            if (isPattern && totalGrowthRate >= minGrowthRate) {
+                // 分析量价关系
+                const priceChange = (klineData[i + days - 1][1] - klineData[i][1]) / klineData[i][1];
+                let volumePriceRelation = "量增价平";
+
+                if (priceChange > 0.03) {
+                    volumePriceRelation = "量增价升";
+                } else if (priceChange < -0.03) {
+                    volumePriceRelation = "量增价跌";
+                }
+
+                patterns.push({
+                    startIndex: i,
+                    endIndex: i + days - 1,
+                    days: days,
+                    growthRate: totalGrowthRate,
+                    dailyGrowthRates: growthRates,
+                    volumePriceRelation: {
+                        priceChange: priceChange,
+                        relation: volumePriceRelation
+                    }
+                });
+            }
+        }
+
+        return patterns.length > 0 ? patterns : null;
+    }
+
+    adjustChartParamsBasedOnTerms(terms) {
+        const params = {
+            volatility: 0.02,          // 基础波动率
+            trendStrength: 1.0,        // 趋势强度
+            volumeMultiplier: 1.0,     // 成交量倍数
+            patterns: [],              // 需要生成的形态
+            indicators: new Set()       // 需要显示的指标
+        };
+
+        terms.forEach(term => {
+            switch (term.type) {
+                case 'indicator':
+                    params.indicators.add(term.indicator);
+                    break;
+                case 'pattern':
+                    params.patterns.push(term.pattern);
+                    // 调整波动率以适应形态
+                    if (term.pattern === 'doubleBottom' || term.pattern === 'doubleTop') {
+                        params.volatility *= 1.5;
+                    }
+                    break;
+                case 'volumePattern':
+                    if (term.pattern === 'volumeIncrease') {
+                        params.volumeMultiplier *= 1.5;
+                    } else if (term.pattern === 'volumeDecrease') {
+                        params.volumeMultiplier *= 0.7;
+                    }
+                    break;
+                case 'action':
+                    if (term.action === 'breakout') {
+                        params.volatility *= 1.3;
+                        params.trendStrength *= 1.2;
+                    }
+                    break;
+            }
+        });
+
+        return params;
+    }
+
+    generateTitle(analysis) {
+        const { trend, period, volumeTrend, volumePriceRelation, technicalIndicators, volumePatterns, recognizedTerms = [] } = analysis;
+        let title = `${trend}趋势 - ${period}日K线图`;
+
+        if (volumeTrend === 'shrinking') {
+            title += ' | 缩量';
+        } else if (volumeTrend === 'expanding') {
+            title += ' | 放量';
+        }
+
+        if (volumePriceRelation === 'divergent') {
+            title += ' | 量价背离';
+        } else if (volumePriceRelation === 'consistent') {
+            title += ' | 量价齐升';
+        }
+
+        // 添加量上涨模式信息到标题
+        if (volumePatterns && volumePatterns.days) {
+            title += ` | ${volumePatterns.days}天量上涨`;
+        }
+
+        // 添加技术指标信息到标题
+        if (technicalIndicators && technicalIndicators.length > 0) {
+            title += ` | ${technicalIndicators.join('+')}`;
+        }
+
+        return title;
+    }
+
+    /**
+     * 解析量上涨模式参数
+     * @param {string} input - 用户输入
+     * @returns {Object|null} - 返回解析后的参数对象，如果没有识别到量上涨模式则返回null
+     */
+    parseVolumePatternParams(input) {
+        // 检查输入是否包含量上涨模式关键词
+        if (!input.includes('量上涨') && !input.includes('成交量上涨') &&
+            !input.includes('量能增长') && !input.includes('放量')) {
+            return null;
+        }
+
+        // 使用StockTerms类解析量上涨模式参数
+        return StockTerms.parseVolumeIncreaseParams(input);
+    }
+
+    processData(inputData) {
+        const processedData = [];
+        const totalDays = inputData.length;
+        const recognizedPatterns = this.recognizePatterns(inputData);
+        const patternGenerator = this.createPatternGenerator(recognizedPatterns);
+        
+        for (let i = 0; i < totalDays; i++) {
+            const dataPoint = { ...inputData[i] };
+            const basePrice = dataPoint.close;
+            
+            // 检查是否需要根据形态覆盖数据点
+            const patternOverride = patternGenerator.generatePattern(basePrice, i, totalDays);
+            if (patternOverride && patternOverride.override) {
+                dataPoint.open = patternOverride.ohlc[0];
+                dataPoint.close = patternOverride.ohlc[1];
+                dataPoint.low = patternOverride.ohlc[2];
+                dataPoint.high = patternOverride.ohlc[3];
+            }
+            
+            processedData.push(dataPoint);
+        }
+        return processedData;
+    }
+
+    generateTimeSeriesData(input) {
+        // 解析时间段和趋势
+        const segments = input.split(/[,，]/);
+        const timeSegments = [];
+        const basePrice = 100;  // 基准价格
+        let currentPrice = basePrice;
+        
+        // 解析每个时间段
+        for (const segment of segments) {
+            const match = segment.match(/(\d{1,2}[:：.]\d{2})\s*[-~至到]\s*(\d{1,2}[:：.]\d{2})\s*(拉升|上涨|回落|下跌|震荡|横盘|盘整|冲高|探底)/);
+            if (match) {
+                timeSegments.push({
+                    start: this.normalizeTime(match[1]),
+                    end: this.normalizeTime(match[2]),
+                    trend: match[3]
+                });
+            }
+        }
+
+        // 生成分时数据
+        const timeData = [];
+        const tradingMinutes = 1;  // 每分钟一个数据点
+
+        for (const segment of timeSegments) {
+            const startMinutes = this.timeToMinutes(segment.start);
+            const endMinutes = this.timeToMinutes(segment.end);
+            const duration = endMinutes - startMinutes;
+
+            if (duration <= 0) continue;
+
+            const priceChanges = this.generatePriceChanges(segment.trend, duration, currentPrice);
+            
+            // 生成这个时间段的数据点
+            for (let i = 0; i < duration; i += tradingMinutes) {
+                const time = this.minutesToTime(startMinutes + i);
+                const price = priceChanges[i];
+                const volume = this.generateVolume(price, currentPrice, segment.trend);
+                
+                timeData.push({
+                    time,
+                    price: parseFloat(price.toFixed(2)),
+                    volume,
+                    avgPrice: parseFloat(((timeData.reduce((sum, item) => sum + item.price, 0) + price) / 
+                              (timeData.length + 1)).toFixed(2))
+                });
+
+                currentPrice = price;
+            }
+        }
+
+        return timeData;
+    }
+
+    normalizeTime(timeStr) {
+        // 统一时间格式为 HH:mm
+        timeStr = timeStr.replace(/[：.]/g, ':');
+        if (timeStr.length === 4) {
+            return `0${timeStr.slice(0,1)}:${timeStr.slice(1)}`;
+        } else if (timeStr.length === 5 && !timeStr.includes(':')) {
+            return `${timeStr.slice(0,2)}:${timeStr.slice(2)}`;
+        }
+        return timeStr;
+    }
+
+    timeToMinutes(time) {
+        const [hours, minutes] = time.split(':').map(Number);
+        return hours * 60 + minutes;
+    }
+
+    minutesToTime(totalMinutes) {
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    }
+
+    generatePriceChanges(trend, duration, startPrice) {
+        const changes = new Array(duration);
+        let currentPrice = startPrice;
+        
+        // 设置趋势参数
+        const trendParams = {
+            '拉升': { strength: 0.0012, volatility: 0.0003 },
+            '上涨': { strength: 0.0008, volatility: 0.0002 },
+            '回落': { strength: -0.0008, volatility: 0.0002 },
+            '下跌': { strength: -0.0012, volatility: 0.0003 },
+            '震荡': { strength: 0, volatility: 0.0005 },
+            '横盘': { strength: 0, volatility: 0.0002 },
+            '盘整': { strength: 0, volatility: 0.0002 },
+            '冲高': { strength: 0.001, volatility: 0.0003 },
+            '探底': { strength: -0.001, volatility: 0.0003 }
+        }[trend] || { strength: 0, volatility: 0.0002 };
+
+        for (let i = 0; i < duration; i++) {
+            const progress = i / duration;
+            let trendFactor = 0;
+
+            switch (trend) {
+                case '拉升':
+                case '上涨':
+                    trendFactor = trendParams.strength * (1 + Math.pow(progress, 1.5));
+                    break;
+                case '回落':
+                case '下跌':
+                    trendFactor = trendParams.strength * (1 + Math.pow(1 - progress, 0.8));
+                    break;
+                case '震荡':
+                    trendFactor = trendParams.strength * Math.sin(progress * Math.PI * 4);
+                    break;
+                case '横盘':
+                case '盘整':
+                    trendFactor = trendParams.strength * (Math.random() - 0.5) * 0.5;
+                    break;
+                case '冲高':
+                    trendFactor = trendParams.strength * Math.sin(progress * Math.PI);
+                    break;
+                case '探底':
+                    trendFactor = -trendParams.strength * Math.sin(progress * Math.PI);
+                    break;
+            }
+
+            // 添加随机波动
+            const randomFactor = (Math.random() - 0.5) * trendParams.volatility;
+            currentPrice = currentPrice * (1 + trendFactor + randomFactor);
+            changes[i] = currentPrice;
+        }
+
+        return changes;
+    }
+
+    generateVolume(currentPrice, prevPrice, trend) {
+        const baseVolume = 500000; // 基础成交量
+        const priceChange = Math.abs((currentPrice - prevPrice) / prevPrice);
+        
+        // 趋势系数
+        const trendMultiplier = {
+            '拉升': 2.0,
+            '上涨': 1.5,
+            '回落': 1.2,
+            '下跌': 1.8,
+            '震荡': 1.3,
+            '横盘': 0.8,
+            '盘整': 0.8,
+            '冲高': 1.6,
+            '探底': 1.6
+        }[trend] || 1.0;
+
+        // 成交量受价格变化影响
+        const volumeChange = 1 + (priceChange * 20);
+        
+        // 添加随机波动
+        const randomFactor = 0.8 + Math.random() * 0.4;
+        
+        return Math.floor(baseVolume * trendMultiplier * volumeChange * randomFactor);
+    }
+
+    isValidTimeRange(startTime, endTime) {
+        const isValidTime = (time) => {
+            const [hours, minutes] = time.split(':').map(Number);
+            return !isNaN(hours) && !isNaN(minutes) && 
+                   hours >= 0 && hours <= 23 && 
+                   minutes >= 0 && minutes <= 59;
+        };
+
+        if (!isValidTime(startTime) || !isValidTime(endTime)) {
+            return false;
+        }
+
+        const [startHour, startMin] = startTime.split(':').map(Number);
+        const [endHour, endMin] = endTime.split(':').map(Number);
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+
+        // 验证是否在交易时间内
+        const isTradingTime = (minutes) => {
+            const hour = Math.floor(minutes / 60);
+            const min = minutes % 60;
+            return (hour >= 9 && (hour < 11 || (hour === 11 && min <= 30))) || // 上午
+                   (hour >= 13 && hour < 15); // 下午
+        };
+
+        return startMinutes < endMinutes && 
+               isTradingTime(startMinutes) && 
+               isTradingTime(endMinutes);
+    }
+
+    normalizeTrend(trend) {
+        const trendMap = {
+            '拉升': 'strongRise',
+            '上涨': 'rise',
+            '回落': 'fall',
+            '下跌': 'fall',
+            '震荡': 'volatile',
+            '横盘': 'flat',
+            '盘整': 'flat',
+            '冲高': 'upAndDown',
+            '探底': 'downAndUp',
+            '增量': 'incrementalRise',
+            '强势': 'strongRise',
+            '反弹': 'bounce'
+        };
+        return trendMap[trend] || trend;
+    }
+    
+    convertToMinutes(time) {
+        const [hours, minutes] = time.split(':').map(Number);
+        return hours * 60 + minutes;
+    }
+    
+    minutesToTime(totalMinutes) {
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+    
+    calculatePriceChange(trend, progress) {
+        const trendParams = {
+            'strongRise': { base: 0.03, volatility: 0.001 },
+            'rise': { base: 0.015, volatility: 0.0008 },
+            'fall': { base: -0.015, volatility: 0.0008 },
+            'volatile': { base: 0.005, volatility: 0.002 },
+            'flat': { base: 0.002, volatility: 0.0005 },
+            'upAndDown': { base: 0.02, volatility: 0.001 },
+            'downAndUp': { base: -0.02, volatility: 0.001 },
+            'incrementalRise': { base: 0.02, volatility: 0.0005 },
+            'bounce': { base: 0.01, volatility: 0.001 },
+            // 针对分时增量上涨的特殊趋势
+            '缓慢上涨': { base: 0.008, volatility: 0.0005 },
+            '加速上涨': { base: 0.015, volatility: 0.0008 },
+            '快速上涨': { base: 0.025, volatility: 0.001 },
+            '强势上涨': { base: 0.035, volatility: 0.0012 }
+        };
+
+        const params = trendParams[trend] || { base: 0.002, volatility: 0.0005 };
+        const random = (Math.random() - 0.5) * params.volatility;
+        
+        switch (trend) {
+            case 'strongRise':
+            case 'rise':
+            case '缓慢上涨':
+            case '加速上涨':
+            case '快速上涨':
+            case '强势上涨':
+                return (params.base * Math.pow(progress, 1.2) / 100) + random;
+                
+            case 'fall':
+                return (params.base * Math.pow(1 - progress, 0.8) / 100) + random;
+                
+            case 'volatile':
+                return (params.base * Math.sin(progress * Math.PI * 4) / 100) + random;
+                
+            case 'flat':
+                return (params.base * (Math.random() - 0.5) / 100) + random;
+                
+            case 'upAndDown':
+                return (params.base * Math.sin(progress * Math.PI) / 100) + random;
+                
+            case 'downAndUp':
+                return (params.base * -Math.sin(progress * Math.PI) / 100) + random;
+                
+            case 'incrementalRise':
+                // 递增式上涨，力度逐渐加大
+                return (params.base * Math.pow(progress, 2) / 100) + random;
+                
+            case 'bounce':
+                // 反弹走势，先快后慢
+                return (params.base * Math.sqrt(progress) / 100) + random;
+                
+            default:
+                return random;
+        }
+    }
+    
+    generateVolume(price, trend, progress) {
+        const baseVolume = 500000;
+        const trendMultiplier = {
+            '拉升': 2.0,
+            '上涨': 1.5,
+            '回落': 1.2,
+            '下跌': 1.8,
+            '震荡': 1.3,
+            '横盘': 0.8,
+            '盘整': 0.8,
+            '冲高': 1.6,
+            '探底': 1.6
+        }[trend] || 1.0;
+        
+        const progressFactor = 1 + Math.sin(progress * Math.PI) * 0.5;
+        const randomFactor = 0.7 + Math.random() * 0.6;
+        
+        return Math.floor(baseVolume * trendMultiplier * progressFactor * randomFactor);
+    }
+
+    generateSampleData() {
+        return this.generateChartData({
+            prices: [100],
+            trend: '上涨',
+            period: 20,
+            hasVolume: true,
+            volumeTrend: 'normal',
+            volumePriceRelation: 'normal',
+            specificPrices: {
+                open: null,
+                close: null,
+                high: null,
+                low: null
+            }
+        });
+    }
+
+    /**
+     * 计算移动平均线
+     * @param {Array} data - 数据数组
+     * @param {Number} period - 周期
+     * @returns {Array} - 移动平均线数据
+     */
+    calculateMA(data, period) {
+        const result = [];
+        for (let i = 0; i < data.length; i++) {
+            if (i === 0) {
+                // 第一个点直接使用当前值
+                result.push(data[i]);
+            } else if (i < period - 1) {
+                // 数据点不足时，使用可用的数据点计算平均值
+                let sum = 0;
+                for (let j = 0; j <= i; j++) {
+                    sum += data[j];
+                }
+                result.push(sum / (i + 1));
+            } else {
+                // 数据点足够时，使用完整周期计算
+                let sum = 0;
+                for (let j = 0; j < period; j++) {
+                    sum += data[i - j];
+                }
+                result.push(sum / period);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 计算MACD指标
+     * @param {Array} closePrices - 收盘价数组
+     * @returns {Object} - MACD指标数据
+     */
+    calculateMACD(closePrices) {
+        // MACD参数
+        const fastPeriod = 12;
+        const slowPeriod = 26;
+        const signalPeriod = 9;
+
+        // 计算EMA
+        let emaFast = [], emaSlow = [];
+        let lastEmaFast = closePrices[0];
+        let lastEmaSlow = closePrices[0];
+        const alphaFast = 2 / (fastPeriod + 1);
+        const alphaSlow = 2 / (slowPeriod + 1);
+
+        // 优化EMA计算
+        for (let i = 0; i < closePrices.length; i++) {
+            if (i === 0) {
+                emaFast.push(closePrices[0]);
+                emaSlow.push(closePrices[0]);
+            } else {
+                lastEmaFast = lastEmaFast * (1 - alphaFast) + closePrices[i] * alphaFast;
+                lastEmaSlow = lastEmaSlow * (1 - alphaSlow) + closePrices[i] * alphaSlow;
+                emaFast.push(lastEmaFast);
+                emaSlow.push(lastEmaSlow);
+            }
+        }
+
+        // 计算DIF (MACD Line)
+        const dif = [];
+        for (let i = 0; i < closePrices.length; i++) {
+            dif.push(emaFast[i] - emaSlow[i]);
+        }
+
+        // 计算DEA (Signal Line)
+        const alphaSignal = 2 / (signalPeriod + 1);
+        const dea = [];
+        let lastDea = dif[0];
+
+        for (let i = 0; i < dif.length; i++) {
+            if (i === 0) {
+                dea.push(dif[0]);
+            } else {
+                lastDea = lastDea * (1 - alphaSignal) + dif[i] * alphaSignal;
+                dea.push(lastDea);
+            }
+        }
+
+        // 计算MACD柱状图 (Histogram)
+        const macd = [];
+        for (let i = 0; i < dif.length; i++) {
+            macd.push((dif[i] - dea[i]) * 2); // 乘以2是为了放大视觉效果
+        }
+
+        return { dif, dea, macd };
+    }
+
+    /**
+     * 计算指数移动平均线 (EMA)
+     * @param {Array} data - 数据数组
+     * @param {Number} period - 周期
+     * @returns {Array} - EMA数据
+     */
+    calculateEMA(data, period) {
+        const result = [];
+        const k = 2 / (period + 1);
+
+        for (let i = 0; i < data.length; i++) {
+            if (i === 0) {
+                // 第一个点使用SMA
+                result.push(data[0]);
+            } else if (i < period) {
+                // 数据不足时，使用SMA
+                let sum = 0;
+                for (let j = 0; j <= i; j++) {
+                    sum += data[j];
+                }
+                result.push(sum / (i + 1));
+            } else {
+                // EMA = 前一日EMA + k * (今日收盘价 - 前一日EMA)
+                result.push(result[i - 1] + k * (data[i] - result[i - 1]));
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 计算CCI指标 (Commodity Channel Index)
+     * @param {Array} klineData - K线数据数组 [open, close, low, high]
+     * @param {Number} period - 周期，默认为14
+     * @returns {Array} - CCI数据
+     */
+    calculateCCI(klineData, period = 14) {
+        const result = [];
+        
+        // 计算典型价格 (TP)
+        const typicalPrices = klineData.map(candle => {
+            const high = candle[3];
+            const low = candle[2];
+            const close = candle[1];
+            return (high + low + close) / 3;
+        });
+
+        // 使用滑动窗口计算SMA和MD
+        for (let i = 0; i < typicalPrices.length; i++) {
+            if (i < period - 1) {
+                // 数据不足时，累积可用数据
+                let sum = 0;
+                let sumDeviation = 0;
+                
+                for (let j = 0; j <= i; j++) {
+                    sum += typicalPrices[j];
+                }
+                const sma = sum / (i + 1);
+                
+                for (let j = 0; j <= i; j++) {
+                    sumDeviation += Math.abs(typicalPrices[j] - sma);
+                }
+                const meanDeviation = sumDeviation / (i + 1);
+                
+                // CCI计算，避免除以0
+                const cci = meanDeviation === 0 ? 0 : (typicalPrices[i] - sma) / (0.015 * meanDeviation);
+                result.push(Math.min(Math.max(cci, -100), 100)); // 限制在±100范围内
+            } else {
+                // 使用完整周期数据
+                let sum = 0;
+                let sumDeviation = 0;
+                
+                // 计算SMA
+                for (let j = 0; j < period; j++) {
+                    sum += typicalPrices[i - j];
+                }
+                const sma = sum / period;
+                
+                // 计算平均偏差
+                for (let j = 0; j < period; j++) {
+                    sumDeviation += Math.abs(typicalPrices[i - j] - sma);
+                }
+                const meanDeviation = sumDeviation / period;
+                
+                // CCI计算，添加平滑因子
+                const smoothFactor = 0.7; // 平滑因子，减少剧烈波动
+                const rawCCI = meanDeviation === 0 ? 0 : (typicalPrices[i] - sma) / (0.015 * meanDeviation);
+                const smoothedCCI = i > period - 1 ? 
+                    result[i-1] * (1 - smoothFactor) + rawCCI * smoothFactor : 
+                    rawCCI;
+                    
+                result.push(Math.min(Math.max(smoothedCCI, -100), 100)); // 限制在±100范围内
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 计算KDJ指标
+     * @param {Array} klineData - K线数据数组 [open, close, low, high]
+     * @param {Number} periodK - K值计算周期，默认为9
+     * @param {Number} periodD - D值计算周期，默认为3
+     * @param {Number} periodJ - J值计算周期，默认为3
+     * @returns {Object} - KDJ指标数据
+     */
+    calculateKDJ(klineData, periodK = 9, periodD = 3, periodJ = 3) {
+        const rsv = [];
+        const k = [];
+        const d = [];
+        const j = [];
+
+        // 计算RSV
+        for (let i = 0; i < klineData.length; i++) {
+            if (i < periodK - 1) {
+                // 数据不足时，使用50作为初始值
+                rsv.push(50);
+            } else {
+                // 计算周期内的最高价和最低价
+                let highest = -Infinity;
+                let lowest = Infinity;
+
+                for (let j = 0; j < periodK; j++) {
+                    const high = klineData[i - j][3];
+                    const low = klineData[i - j][2];
+
+                    highest = Math.max(highest, high);
+                    lowest = Math.min(lowest, low);
+                }
+
+                // 当前收盘价
+                const close = klineData[i][1];
+
+                // 计算RSV值：(收盘价 - 最低价) / (最高价 - 最低价) * 100
+                const rsvValue = highest === lowest ? 50 : ((close - lowest) / (highest - lowest)) * 100;
+                rsv.push(rsvValue);
+            }
+        }
+
+        // 计算K值、D值和J值
+        for (let i = 0; i < klineData.length; i++) {
+            if (i === 0) {
+                // 第一个点使用RSV值作为初始值
+                k.push(rsv[0]);
+                d.push(rsv[0]);
+                j.push(3 * rsv[0] - 2 * rsv[0]);
+            } else {
+                // K值 = 前一日K值 * (2/3) + 当日RSV * (1/3)
+                const kValue = (k[i - 1] * (periodD - 1) + rsv[i]) / periodD;
+                k.push(kValue);
+
+                // D值 = 前一日D值 * (2/3) + 当日K值 * (1/3)
+                const dValue = (d[i - 1] * (periodJ - 1) + kValue) / periodJ;
+                d.push(dValue);
+
+                // J值 = 3 * K值 - 2 * D值
+                const jValue = 3 * kValue - 2 * dValue;
+                j.push(jValue);
+            }
+        }
+
+        return { k, d, j };
+    }
+
+    /**
+     * 计算RSI指标 (Relative Strength Index)
+     * @param {Array} closePrices - 收盘价数组
+     * @param {Number} period - 周期，默认为14
+     * @returns {Array} - RSI数据
+     */
+    calculateRSI(closePrices, period = 14) {
+        const result = [];
+        const gains = [];
+        const losses = [];
+
+        // 计算价格变化
+        for (let i = 0; i < closePrices.length; i++) {
+            if (i === 0) {
+                gains.push(0);
+                losses.push(0);
+                result.push(0);
+                continue;
+            }
+
+            const change = closePrices[i] - closePrices[i - 1];
+            gains.push(change > 0 ? change : 0);
+            losses.push(change < 0 ? -change : 0);
+
+            if (i < period) {
+                // 数据不足时，使用简单平均
+                let avgGain = 0;
+                let avgLoss = 0;
+
+                for (let j = 1; j <= i; j++) {
+                    avgGain += gains[j];
+                    avgLoss += losses[j];
+                }
+
+                avgGain /= i;
+                avgLoss /= i;
+
+                const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                const rsi = 100 - (100 / (1 + rs));
+                result.push(rsi);
+            } else {
+                // 使用平滑RSI计算方法
+                const avgGain = (gains[i - 1] * (period - 1) + gains[i]) / period;
+                const avgLoss = (losses[i - 1] * (period - 1) + losses[i]) / period;
+
+                const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                const rsi = 100 - (100 / (1 + rs));
+                result.push(rsi);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 计算布林带指标 (Bollinger Bands)
+     * @param {Array} closePrices - 收盘价数组
+     * @param {Number} period - 周期，默认为20
+     * @param {Number} stdDev - 标准差倍数，默认为2
+     * @returns {Object} - 布林带数据
+     */
+    calculateBOLL(closePrices, period = 20, stdDev = 2) {
+        const middle = []; // 中轨（简单移动平均线）
+        const upper = [];  // 上轨
+        const lower = [];  // 下轨
+
+        for (let i = 0; i < closePrices.length; i++) {
+            if (i < period - 1) {
+                // 数据不足时，使用当前收盘价
+                middle.push(closePrices[i]);
+                upper.push(closePrices[i]);
+                lower.push(closePrices[i]);
+            } else {
+                // 计算中轨（简单移动平均线）
+                let sum = 0;
+                for (let j = 0; j < period; j++) {
+                    sum += closePrices[i - j];
+                }
+                const ma = sum / period;
+                middle.push(ma);
+
+                // 计算标准差
+                let squareSum = 0;
+                for (let j = 0; j < period; j++) {
+                    squareSum += Math.pow(closePrices[i - j] - ma, 2);
+                }
+                const standardDeviation = Math.sqrt(squareSum / period);
+
+                // 计算上轨和下轨
+                upper.push(ma + stdDev * standardDeviation);
+                lower.push(ma - stdDev * standardDeviation);
+            }
+        }
+
+        return { middle, upper, lower };
+    }
+}

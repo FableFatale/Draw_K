@@ -1,0 +1,64 @@
+// StockTermsData被TermMatcher类间接使用
+import { TermMatcher, StockTerms } from './stockTerms.js';
+import { TimeChartProcessor } from './timeChartProcessor.js';
+
+export class DataProcessor {
+    constructor() {
+        this.patterns = {
+            price: /(\d+(?:\.\d+)?)/g,
+            trend: /(上涨|下跌|震荡|横盘|涨|跌|牛市|熊市)/,
+            period: /(\d+)\s*(?:天|日|个交易日|交易日)/,
+            volume: /成交量|交易量|量/,
+            openPrice: /开盘价?\s*[:：]?\s*(\d+(?:\.\d+)?)/,
+            closePrice: /收盘价?\s*[:：]?\s*(\d+(?:\.\d+)?)/,
+            highPrice: /最高价?\s*[:：]?\s*(\d+(?:\.\d+)?)/,
+            lowPrice: /最低价?\s*[:：]?\s*(\d+(?:\.\d+)?)/,
+            technicalIndicators: /(MACD|CCI|KDJ|RSI|BOLL|布林带)/gi
+        };
+    }
+
+    processUserInput(input, forceRefresh = false) {
+        try {
+            // 检查是否是分时图请求
+            if (TimeChartProcessor.isTimeChartRequest(input)) {
+                console.log('Processing time series request:', input);
+                
+                let chartData = TimeChartProcessor.processTimeChart(input);
+                if (!chartData) {
+                    // 如果没有明确的时间范围，使用默认时间范围
+                    chartData = TimeChartProcessor.processTimeChart('09:30-15:00 ' + input);
+                }
+                
+                if (chartData) {
+                    return chartData;
+                }
+            }
+
+            // 如果不是分时图请求，按照常规K线处理
+            const terms = StockTerms.extractTerms(input);
+            
+            // 验证术语组合的合理性
+            const validationResult = this.validateTermCombination(terms);
+            if (!validationResult.isValid) {
+                console.warn('术语组合不合理:', validationResult.conflicts);
+            }
+
+            // 分析用户输入
+            const analysis = this.analyzeInput(input);
+            
+            // 添加识别到的术语信息
+            analysis.recognizedTerms = terms;
+            analysis.termValidation = validationResult;
+
+            // 添加强制刷新标记
+            analysis.forceRefresh = forceRefresh;
+
+            return this.generateChartData(analysis);
+        } catch (error) {
+            console.error('处理用户输入时出错:', error);
+            return this.generateSampleData();
+        }
+    }
+
+    // ... rest of the file remains unchanged ...
+}

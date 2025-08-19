@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev)",
+      "Bash(curl -s http://localhost:3001)",
+      "Bash(rm -f chart-test.js kline-test.js test-app.js test-chart.html)",
+      "Bash(node debug-test.js)",
+      "Bash(node debug-chart-config.js)",
+      "Bash(node debug-trend.js)",
+      "Bash(node test_final.js)"
+    ],
+    "deny": []
+  }
+}

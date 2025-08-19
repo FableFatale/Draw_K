@@ -1,0 +1,132 @@
+.chart-controls {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.chart-controls .input-section {
+    margin-bottom: 15px;
+}
+
+.chart-type-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 15px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.chart-type-selector button {
+    padding: 6px 14px;
+    border: none;
+    border-radius: 16px;
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    white-space: nowrap;
+    min-width: 80px;
+    justify-content: center;
+}
+
+.chart-type-selector button:hover {
+    background: rgba(102, 126, 234, 0.2);
+    transform: translateY(-1px);
+}
+
+.chart-type-selector button.active {
+    background: #667eea;
+    color: white;
+}
+
+.hint-box {
+    background: rgba(102, 126, 234, 0.05);
+    border-left: 3px solid #667eea;
+    padding: 10px 15px;
+    margin: 10px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+    color: #666;
+    line-height: 1.4;
+}
+
+/* 暗色主题适配 */
+.dark-theme .chart-controls {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .chart-type-selector {
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.dark-theme .chart-type-selector button {
+    background: rgba(163, 177, 255, 0.08);
+    color: #a3b1ff;
+    border: 1px solid rgba(163, 177, 255, 0.1);
+}
+
+.dark-theme .chart-type-selector button:hover {
+    background: rgba(163, 177, 255, 0.15);
+    border-color: rgba(163, 177, 255, 0.2);
+}
+
+.dark-theme .chart-type-selector button.active {
+    background: #4c5ea3;
+    color: #ffffff;
+    border-color: #5d6eaf;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .hint-box {
+    background: rgba(163, 177, 255, 0.05);
+    border-left-color: #4c5ea3;
+    color: #a3b1ff;
+}
+
+/* 响应式适配 */
+@media (max-width: 768px) {
+    .chart-controls {
+        padding: 10px;
+    }
+
+    .chart-type-selector {
+        padding: 6px;
+        gap: 6px;
+    }
+
+    .chart-type-selector button {
+        padding: 4px 10px;
+        font-size: 12px;
+        height: 24px;
+        min-width: 70px;
+    }
+
+    .hint-box {
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .chart-type-selector {
+        justify-content: space-between;
+    }
+
+    .chart-type-selector button {
+        flex: 1;
+        min-width: calc(25% - 6px);
+        padding: 4px 8px;
+    }
+}

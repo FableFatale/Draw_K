@@ -62,20 +62,73 @@ body {
 
 #userInput {
     flex: 1;
-    min-width: 200px;
-    padding: 15px;
+    min-width: 300px;
+    min-height: 120px;  /* 设置最小高度 */
+    padding: 20px;
     border: 2px solid #e9ecef;
-    border-radius: 8px;
-    font-size: 16px;
+    border-radius: 12px;
+    font-size: 15px;
+    line-height: 1.6;
     resize: vertical;
-    transition: border-color 0.3s ease;
+    transition: all 0.3s ease;
     width: 100%;
     box-sizing: border-box;
+    background-color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 15px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 #userInput:focus {
     outline: none;
     border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    background-color: #ffffff;
+}
+
+#userInput::placeholder {
+    color: #a0aec0;
+    font-size: 14px;
+}
+
+/* 暗色主题适配 */
+.dark-theme #userInput {
+    background-color: rgba(26, 32, 44, 0.95);
+    border-color: #2d3748;
+    color: #e2e8f0;
+}
+
+.dark-theme #userInput:focus {
+    border-color: #4c5ea3;
+    background-color: rgba(26, 32, 44, 1);
+    box-shadow: 0 4px 12px rgba(76, 94, 163, 0.2);
+}
+
+.dark-theme #userInput::placeholder {
+    color: #718096;
+}
+
+/* 输入区域容器样式优化 */
+.input-section {
+    padding: 25px !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05) !important;
+    margin-bottom: 25px !important;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    #userInput {
+        min-height: 100px;
+        padding: 15px;
+        font-size: 14px;
+    }
+    
+    .input-section {
+        padding: 15px !important;
+        margin-bottom: 15px !important;
+    }
 }
 
 .generate-btn {
@@ -98,14 +151,26 @@ body {
 
 .chart-section {
     padding: clamp(15px, 3vw, 30px);
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    min-height: 500px; /* 确保有足够的高度 */
 }
 
 .chart-container {
     width: 100%;
-    height: clamp(300px, 60vh, 600px);
+    max-width: 1400px;
+    height: 500px; /* 设置固定高度 */
+    min-height: 500px; /* 确保最小高度 */
     border-radius: 8px;
     background: #fafafa;
     position: relative;
+    margin: 0 auto;
+    box-sizing: border-box;
+    border: 1px solid #e9ecef;
+    display: block; /* 确保显示 */
 }
 
 .chart-container.loading::after {
@@ -231,11 +296,82 @@ body {
 }
 
 .input-hint {
-    position: absolute;
-    bottom: -22px;
-    left: 0;
     font-size: 12px;
     color: #6c757d;
+    margin: 4px 0 8px 0;
+    padding: 6px 12px;
+    background-color: rgba(108, 117, 125, 0.1);
+    border-radius: 4px;
+    display: inline-block;
+}
+
+/* 优化顶部按钮组样式 */
+.chart-type-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    align-items: center;
+}
+
+.chart-type-buttons button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 20px;
+    background: transparent;
+    color: #667eea;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.chart-type-buttons button:hover {
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.chart-type-buttons button.active {
+    background: #667eea;
+    color: white;
+}
+
+.chart-type-buttons button svg {
+    width: 14px;
+    height: 14px;
+    opacity: 0.8;
+}
+
+/* 暗色主题适配 */
+.dark-theme .chart-type-buttons {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .chart-type-buttons button {
+    color: #a3b1ff;
+}
+
+.dark-theme .chart-type-buttons button:hover {
+    background: rgba(163, 177, 255, 0.1);
+}
+
+.dark-theme .chart-type-buttons button.active {
+    background: #4c5ea3;
+    color: #ffffff;
+}
+
+/* 添加提示文本样式 */
+.hint-text {
+    font-size: 12px;
+    color: #666;
+    margin-right: 12px;
+    opacity: 0.8;
+    font-style: italic;
 }/*
  示例区域样式 */
 .examples {
@@ -327,16 +463,65 @@ body {
 
 /* 全屏模式 */
 .chart-container.fullscreen {
-    position: fixed;
-    top: 0;
-    left: 0;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
     width: 100vw !important;
     height: 100vh !important;
-    z-index: 9999;
-    background: white;
-    border-radius: 0;
-    padding: 20px;
+    z-index: 9999 !important;
+    background: white !important;
+    border-radius: 0 !important;
+    padding: 20px !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
 }
+
+.dark-theme .chart-container.fullscreen {
+    background: #1a1a1a !important;
+}
+
+/* 全屏模式下的工具栏样式 */
+.chart-container.fullscreen .chart-toolbar {
+    top: 20px !important;
+    right: 20px !important;
+    gap: 12px !important;
+}
+
+.chart-container.fullscreen .chart-tool-btn {
+    padding: 8px 16px !important;
+    font-size: 14px !important;
+    background: rgba(255, 255, 255, 0.9) !important;
+    backdrop-filter: blur(8px) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark-theme .chart-container.fullscreen .chart-tool-btn {
+    background: rgba(26, 26, 26, 0.9) !important;
+    color: #e0e0e0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* 全屏模式下的图表元素样式优化 */
+.chart-container.fullscreen .echarts-tooltip {
+    font-size: 14px !important;
+    padding: 12px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    border-radius: 8px !important;
+}
+
+.chart-container.fullscreen .detail-tooltip {
+    font-size: 14px !important;
+    padding: 16px !important;
+    border-radius: 10px !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+}
+
+
 
 /* 详细信息提示 */
 .detail-tooltip {

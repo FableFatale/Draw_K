@@ -1,0 +1,146 @@
+export class ChartRenderer {
+    constructor(containerId, isDarkTheme = false) {
+        this.containerId = containerId;
+        this.chartInstance = null;
+        this.resizeObserver = null;
+        this.isDarkTheme = isDarkTheme;
+        this.initChart();
+    }
+
+    initChart() {
+        try {
+            import('echarts').then(echarts => {
+                const container = document.getElementById(this.containerId);
+                if (!container) {
+                    console.error(`图表容器 #${this.containerId} 不存在`);
+                    return;
+                }
+
+                // 使用构造函数传入的主题状态
+                this.chartInstance = echarts.init(container, this.isDarkTheme ? 'dark' : null, {
+                    renderer: 'canvas',  // 明确指定使用canvas渲染器
+                    devicePixelRatio: window.devicePixelRatio || 1 // 设置设备像素比
+                });
+                
+                // 设置响应式
+                this.setupResizeListener();
+                
+                // 显示加载中状态
+                this.chartInstance.showLoading({
+                    text: '准备中...',
+                    color: this.isDarkTheme ? '#90cdf4' : '#667eea',
+                    textColor: this.isDarkTheme ? '#e0e0e0' : '#333',
+                    maskColor: this.isDarkTheme ? 'rgba(30, 30, 30, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+                });
+
+                // 添加错误处理
+                this.chartInstance.on('rendererror', (params) => {
+                    console.error('图表渲染错误:', params);
+                    this.showError('图表渲染出错，请刷新重试');
+                });
+            }).catch(error => {
+                console.error('加载ECharts库失败:', error);
+                this.showError('加载图表组件失败，请刷新重试');
+            });
+        } catch (error) {
+            console.error('初始化图表时出错:', error);
+            this.showError('初始化图表失败，请刷新重试');
+        }
+    }
+
+    renderChart(data) {
+        if (!this.chartInstance) {
+            console.error('图表实例未初始化');
+            this.showError('图表实例未初始化，请刷新页面重试');
+            return;
+        }
+
+        // 数据验证
+        if (!this.validateChartData(data)) {
+            return;
+        }
+
+        try {
+            // 显示加载状态
+            this.chartInstance.showLoading({
+                text: '渲染中...',
+                color: this.isDarkTheme ? '#90cdf4' : '#667eea',
+                textColor: this.isDarkTheme ? '#e0e0e0' : '#333',
+                maskColor: this.isDarkTheme ? 'rgba(30, 30, 30, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+            });
+
+            // 导入图表配置生成函数
+            import('../../utils/chartConfig.js').then(module => {
+                const { getChartConfig } = module;
+                
+                try {
+                    console.log('Generating chart config with data:', data);
+                    
+                    // 生成图表配置
+                    const option = getChartConfig(data);
+                    
+                    console.log('Generated chart config:', option);
+                    
+                    // 确保option是有效的对象
+                    if (!option || typeof option !== 'object') {
+                        throw new Error('Invalid chart configuration generated');
+                    }
+                    
+                    // 隐藏加载状态
+                    this.chartInstance.hideLoading();
+                    
+                    // 清除当前的所有配置
+                    this.chartInstance.clear();
+                    
+                    // 设置图表配置
+                    this.chartInstance.setOption(option, true);
+                    
+                    // 记录当前数据
+                    this.currentData = data;
+                    
+                    // 触发渲染完成事件
+                    this.onRenderComplete(data);
+                    
+                } catch (configError) {
+                    console.error('生成图表配置时出错:', configError);
+                    this.showError(`生成图表配置失败: ${configError.message}`);
+                }
+            }).catch(error => {
+                console.error('加载图表配置模块失败:', error);
+                this.showError('加载图表配置失败，请刷新重试');
+            });
+        } catch (error) {
+            console.error('渲染图表时出错:', error);
+            this.showError(`渲染图表失败: ${error.message}`);
+        }
+    }
+
+    validateChartData(data) {
+        if (!data) {
+            console.error('图表数据为空');
+            this.showError('图表数据为空，请检查数据源');
+            return false;
+        }
+
+        const isTimeChart = data.chartType === 'time';
+        
+        if (isTimeChart) {
+            if (!data.timeData || !Array.isArray(data.timeData) || data.timeData.length === 0) {
+                console.error('分时图数据无效:', data);
+                this.showError('分时图数据无效，请检查数据格式');
+                return false;
+            }
+        } else {
+            if (!data.dates || !data.data || !Array.isArray(data.dates) || !Array.isArray(data.data) || 
+                data.dates.length === 0 || data.data.length === 0) {
+                console.error('K线图数据无效:', data);
+                this.showError('K线图数据无效，请检查数据格式');
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // ... 其他方法保持不变 ...
+}
